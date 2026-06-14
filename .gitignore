@@ -1,0 +1,12 @@
+# Mengabaikan Virtual Environment
+.venv/
+venv/
+env/
+
+# Mengabaikan File Konfirmasi Rahasia (API Key)
+.env
+
+# Mengabaikan file sampah text editor
+tempCodeRunnerFile.py
+**/__pycache__/
+.DS_Store
