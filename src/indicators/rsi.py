@@ -6,7 +6,7 @@ class RSIIndicator:
         self.rsi_period = rsi_period
         self.ma_period = ma_period 
 
-    def calculate(self, candles):
+    def calculate_rsi(self, candles):
 
         if len(candles) < self.rsi_period:
             return {"rsi": None, "rsi_smoothing": None}

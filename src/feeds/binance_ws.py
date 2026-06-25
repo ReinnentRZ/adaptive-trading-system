@@ -2,12 +2,14 @@ import websocket
 import time
 from src.feeds.stream import process_kline
 from src.indicators.rsi import RSIIndicator
+from src.indicators.adx import ADXIndicator
 from logs.log import log_close
 
 class BinanceWebSocket:
     def __init__(self, data_manager):
         self.data_manager = data_manager
         self.rsi_bot = RSIIndicator(rsi_period=14, ma_period=14)
+        self.adx_bot = ADXIndicator(adx_period=14)
 
     def on_message(self, ws, message):
 
@@ -17,9 +19,12 @@ class BinanceWebSocket:
             
             self.data_manager.add_new_candle(data)
             
-            candles = self.data_manager.get_data_for_rsi()
+            candles_rsi = self.data_manager.get_data_for_rsi()
+            candles_adx = self.data_manager.get_data_for_adx()
 
-            hasil_rsi = self.rsi_bot.calculate(candles)
+            hasil_rsi = self.rsi_bot.calculate_rsi(candles_rsi)
+            hasil_adx = self.adx_bot.calculate_adx(candles_adx)
+    
 
             if hasil_rsi["rsi"] is not None:
                 #print(f"[{data['symbol']}] RSI: {hasil_rsi['rsi']} | Smoothing: {hasil_rsi['rsi_smoothing']}")
@@ -28,8 +33,10 @@ class BinanceWebSocket:
                 data_kline=data, 
                 time_close=data["time_closed"], 
                 rsi_value=hasil_rsi["rsi"], 
-                rsi_smoothing=hasil_rsi["rsi_smoothing"]
-            )
+                rsi_smoothing=hasil_rsi["rsi_smoothing"],
+                adx_value=hasil_adx["adx"],
+                adx_smoothing=hasil_adx["adx_smoothing"]
+                )
 
     def on_error(self, ws, error):
         print("WebSocket Error:", error)

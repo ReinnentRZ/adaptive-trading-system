@@ -24,6 +24,9 @@ class DataManager:
 
     def get_data_for_rsi(self):
         return self.candles_history
+    
+    def get_data_for_adx(self):
+        return self.candles_history
 
     def add_new_candle(self, new_candle):
 

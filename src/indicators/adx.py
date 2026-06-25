@@ -1,0 +1,30 @@
+import numpy as np
+import talib
+
+class ADXIndicator:
+    def __init__(self, adx_period=14, smoothing_period=14):
+        self.adx_period = adx_period
+        self.smoothing_period = smoothing_period
+
+    def calculate_adx(self, candles):              
+        if len(candles) < (self.adx_period * 2) + self.smoothing_period:
+            return {"adx": None, "adx_smoothing": None}
+        
+        high_prices = np.array([float(h["high"]) for h in candles], dtype=np.float64)
+        low_prices = np.array([float(l["low"]) for l in candles], dtype=np.float64)
+        close_prices = np.array([float(c["close"]) for c in candles], dtype=np.float64)
+
+        adx_values = talib.ADX(high_prices, low_prices, close_prices, timeperiod=self.adx_period)
+
+        adx_smoothing_values = talib.SMA(adx_values, timeperiod=self.smoothing_period)
+
+        current_adx = adx_values[-1]
+        current_smoothing = adx_smoothing_values[-1]
+
+        if np.isnan(current_adx) or np.isnan(current_smoothing):
+            return {"adx": None, "adx_smoothing": None}
+
+        return {
+            "adx": round(current_adx, 2),
+            "adx_smoothing": round(current_smoothing, 2)
+        }
