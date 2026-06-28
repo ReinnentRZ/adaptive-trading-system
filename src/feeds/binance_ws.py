@@ -3,6 +3,7 @@ import time
 from src.feeds.stream import process_kline
 from src.indicators.rsi import RSIIndicator
 from src.indicators.adx import ADXIndicator
+from src.indicators.cci import CCIIndikator
 from logs.log import log_close
 
 class BinanceWebSocket:
@@ -10,6 +11,7 @@ class BinanceWebSocket:
         self.data_manager = data_manager
         self.rsi_bot = RSIIndicator(rsi_period=14, ma_period=14)
         self.adx_bot = ADXIndicator(adx_period=14)
+        self.cci_bot = CCIIndikator(cci_period=20, smoothing_period=14)
 
     def on_message(self, ws, message):
 
@@ -21,10 +23,11 @@ class BinanceWebSocket:
             
             candles_rsi = self.data_manager.get_data_for_rsi()
             candles_adx = self.data_manager.get_data_for_adx()
+            candles_cci = self.data_manager.get_data_for_cci()
 
             hasil_rsi = self.rsi_bot.calculate_rsi(candles_rsi)
             hasil_adx = self.adx_bot.calculate_adx(candles_adx)
-    
+            hasil_cci = self.cci_bot.calculate_cci(candles_cci)
 
             if hasil_rsi["rsi"] is not None:
                 #print(f"[{data['symbol']}] RSI: {hasil_rsi['rsi']} | Smoothing: {hasil_rsi['rsi_smoothing']}")
@@ -35,7 +38,9 @@ class BinanceWebSocket:
                 rsi_value=hasil_rsi["rsi"], 
                 rsi_smoothing=hasil_rsi["rsi_smoothing"],
                 adx_value=hasil_adx["adx"],
-                adx_smoothing=hasil_adx["adx_smoothing"]
+                adx_smoothing=hasil_adx["adx_smoothing"],
+                cci_value=hasil_cci["cci"],
+                cci_smoothing=hasil_cci["cci_smoothing"]
                 )
 
     def on_error(self, ws, error):

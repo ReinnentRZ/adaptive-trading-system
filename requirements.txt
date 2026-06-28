@@ -1,4 +1,6 @@
+numpy==2.5.0
 pandas==3.0.3
 python-dotenv==1.2.2
 python_binance==1.0.36
+ta_lib==0.6.8
 websocket_client==1.9.0
