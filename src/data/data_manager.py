@@ -22,13 +22,7 @@ class DataManager:
                 "is_closed": True
             })
 
-    def get_data_for_rsi(self):
-        return self.candles_history
-    
-    def get_data_for_adx(self):
-        return self.candles_history
-    
-    def get_data_for_cci(self):
+    def get_data(self):
         return self.candles_history
 
     def add_new_candle(self, new_candle):

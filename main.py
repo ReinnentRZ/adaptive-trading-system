@@ -1,4 +1,3 @@
-import websocket
 
 from src.services.binance_client import BinanceService
 from src.data.data_manager import DataManager
