@@ -8,7 +8,7 @@ from src.feeds.binance_ws import BinanceWebSocket
 # ==========================================
 SYMBOL = "BTCUSDT"
 INTERVAL = "1m"  
-LIMIT = 200       
+LIMIT = 2000       
 
 
 def main():

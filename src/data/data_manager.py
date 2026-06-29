@@ -30,3 +30,4 @@ class DataManager:
         self.candles_history.append(new_candle)
         if len(self.candles_history) > self.limit:
             self.candles_history.pop(0)
+            

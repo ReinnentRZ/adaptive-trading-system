@@ -10,7 +10,7 @@ class WTIndicator:
 
     def calculate_wt(self, candles):
         if len(candles) < (self.channel_length + self.average_length + self.wt_sma_length):
-            return {"wt1": None, "wt2": None}
+            return {"wt1": None, "wt2": None,"series": [float('nan')] * len(candles)}
         
         high_prices = np.array([float(h["high"]) for h in candles], dtype=np.float64)
         low_prices = np.array([float(l["low"]) for l in candles], dtype=np.float64)
@@ -34,9 +34,15 @@ class WTIndicator:
         current_wt2 = wt2_values[-1]
 
         if np.isnan(current_wt1) or np.isnan(current_wt2):
-            return {"wt1": None, "wt2": None}
+            return {
+                "wt1": None, 
+                "wt2": None,
+                "series": np.full(len(candles), np.nan) 
+            }
 
         return {
             "wt1": round(current_wt1, 2),
-            "wt2": round(current_wt2, 2)
+            "wt2": round(current_wt2, 2),
+            "series": wt1_values
+
         }

@@ -8,7 +8,7 @@ class ADXIndicator:
 
     def calculate_adx(self, candles):              
         if len(candles) < (self.adx_period * 2) + self.smoothing_period:
-            return {"adx": None, "adx_smoothing": None}
+            return {"adx": None, "adx_smoothing": None, "series": [float('nan')] * len(candles)}
         
         high_prices = np.array([float(h["high"]) for h in candles], dtype=np.float64)
         low_prices = np.array([float(l["low"]) for l in candles], dtype=np.float64)
@@ -22,9 +22,15 @@ class ADXIndicator:
         current_smoothing = adx_smoothing_values[-1]
 
         if np.isnan(current_adx) or np.isnan(current_smoothing):
-            return {"adx": None, "adx_smoothing": None}
+            return {
+                "adx": None, 
+                "adx_smoothing": None,
+                "series": np.full(len(candles), np.nan) 
+            }
+        
 
         return {
             "adx": round(current_adx, 2),
-            "adx_smoothing": round(current_smoothing, 2)
+            "adx_smoothing": round(current_smoothing, 2),
+            "series": adx_values
         }

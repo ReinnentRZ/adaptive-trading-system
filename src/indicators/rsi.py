@@ -9,7 +9,7 @@ class RSIIndicator:
     def calculate_rsi(self, candles):
 
         if len(candles) < self.rsi_period:
-            return {"rsi": None, "rsi_smoothing": None}
+            return {"rsi": None, "rsi_smoothing": None, "series": [float('nan')] * len(candles)}
 
         close_prices = [float(c["close"]) for c in candles]
 
@@ -23,9 +23,14 @@ class RSIIndicator:
         current_smoothing = rsi_smoothing_values[-1]
 
         if np.isnan(current_rsi) or np.isnan(current_smoothing):
-            return {"rsi": None, "rsi_smoothing": None}
+            return {
+                "rsi": None, 
+                "rsi_smoothing": None,
+                "series": np.full(len(candles), np.nan)
+            }
 
         return {
             "rsi": round(current_rsi, 2),
-            "rsi_smoothing": round(current_smoothing, 2)
+            "rsi_smoothing": round(current_smoothing, 2),
+            "series": rsi_values
         }
