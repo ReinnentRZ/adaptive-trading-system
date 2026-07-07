@@ -1,3 +1,29 @@
+"""
+Lorentzian Classification -- core ML strategy.
+
+Reverse-engineered from the "Machine Learning: Lorentzian Classification"
+Pine Script indicator (jdehorty). Feature engineering, Lorentzian distance,
+and the approximate nearest-neighbor vote mirror the original indicator's
+"Core ML Logic" section. The post-prediction decision logic (volatility /
+regime / ADX filters, the sticky `signal` state machine, and kernel-
+regression / EMA / SMA confirmation) is replayed in `_run_decision_engine`
+so that `PredictionResult.signal` matches the original indicator's BUY /
+SELL / HOLD behavior instead of just the sign of the raw vote.
+
+Position/exit management (`endLongTrade` / `endShortTrade`) remains out of
+scope: `Direction` has only three states and can't represent a fourth
+"exit" signal distinct from NEUTRAL without changing that type.
+
+Complexity
+----------
+- `approximate_nearest_neighbors`: O(max_bars_back) per call.
+- `_compute_prediction_series` calls it once per bar in the dataset (to
+  replay the sticky decision state machine), so one `analyze()` call is
+  O(N * max_bars_back) where N is the number of candles passed in -- this
+  mirrors the fact that the original Pine script also evaluates
+  `prediction` at every bar as it walks the chart, not just the latest one.
+"""
+
 from __future__ import annotations
 import math
 import numpy as np
@@ -15,6 +41,7 @@ __all__ = [
     "FeatureVector",
     "TrainingDataset",
     "LorentzianSettings",
+    "DecisionEngineSettings",
     "PredictionResult",
     "lorentzian_distance",
     "generate_labels",
@@ -132,14 +159,56 @@ class LorentzianSettings:
 
 
 @dataclass(frozen=True)
+class DecisionEngineSettings:
+    """
+    Post-prediction filter/confirmation settings.
+
+    Mirrors the original indicator's "Filters" and "Kernel Settings" input
+    groups exactly, including their default values. None of this affects
+    feature engineering, distance, or the neighbor vote -- it only governs
+    how a vote is allowed to turn into a BUY/SELL transition (see
+    `LorentzianStrategy._run_decision_engine`).
+    """
+
+    use_volatility_filter: bool = True
+    volatility_min_length: int = 1
+    volatility_max_length: int = 10
+
+    use_regime_filter: bool = True
+    regime_threshold: float = -0.1
+
+    use_adx_filter: bool = False
+    adx_length: int = 14
+    adx_threshold: int = 20
+
+    use_ema_filter: bool = False
+    ema_period: int = 200
+
+    use_sma_filter: bool = False
+    sma_period: int = 200
+
+    use_kernel_filter: bool = True
+    use_kernel_smoothing: bool = False
+    kernel_lookback: int = 8
+    kernel_relative_weight: float = 8.0
+    kernel_regression_level: int = 25
+    kernel_lag: int = 2
+
+
+_DEFAULT_DECISION_ENGINE_SETTINGS = DecisionEngineSettings()
+
+
+@dataclass(frozen=True)
 class PredictionResult:
     """
     Outcome of the model for a single bar.
 
     `prediction` is the signed sum of the selected neighbors' labels (range
-    -neighbors_count..+neighbors_count). Its sign drives `signal`; its
-    magnitude is a usable confidence proxy -- how many of the k neighbors
-    agreed on direction.
+    -neighbors_count..+neighbors_count). Its magnitude is a usable
+    confidence proxy -- how many of the k neighbors agreed on direction.
+    `signal` is the result of the full post-prediction decision engine
+    (filters + sticky state + kernel/EMA/SMA confirmation), NOT simply the
+    sign of `prediction` -- see `LorentzianStrategy._run_decision_engine`.
     """
 
     prediction: int
@@ -174,6 +243,29 @@ def _default_close_extractor(candles: Sequence[Any]) -> List[float]:
                 "used as the Lorentzian model's price source."
             )
     return prices
+
+
+def _extract_price_field(candles: Sequence[Any], field: str) -> List[float]:
+    """
+    Generic OHLC field extractor used only by the decision engine's filters
+    (volatility/regime/ADX/kernel all need `open`/`high`/`low` in addition
+    to the `close` series `_default_close_extractor` already provides).
+    Duck-types the same way `_default_close_extractor` does; does not touch
+    or replace it.
+    """
+    values: List[float] = []
+    
+    for candle in candles:
+        if hasattr(candle, field):
+            values.append(float(getattr(candle, field)))
+        elif isinstance(candle, dict) and field in candle:
+            values.append(float(candle[field]))
+        else:
+            raise TypeError(
+                f"Each candle must expose a '{field}' attribute or key for "
+                "the decision engine's filters."
+            )
+    return values
 
 
 def lorentzian_distance(a: FeatureVector, b: FeatureVector) -> float:
@@ -325,17 +417,320 @@ def approximate_nearest_neighbors(
     return sum(predictions), predictions
 
 
+# ---------------------------------------------------------------------------
+# Decision-engine primitives.
+#
+# Everything below is transcribed directly from the MLExtensions /
+# KernelFunctions Pine source: True Range / Wilder smoothing / EMA / SMA,
+# the volatility / regime / ADX filters, and the Rational Quadratic /
+# Gaussian kernels. None of it touches feature engineering, distance, or
+# the neighbor vote above -- it only governs whether/when a vote is allowed
+# to become a BUY/SELL transition (see `LorentzianStrategy._run_decision_engine`).
+# ---------------------------------------------------------------------------
+
+
+def _rma(values: Sequence[float], length: int) -> List[float]:
+    """Wilder's moving average, matching Pine's `ta.rma` (SMA-seeded EMA)."""
+    n = len(values)
+    result: List[float] = [float("nan")] * n
+    alpha = 1.0 / length
+    for i in range(n):
+        if i < length - 1:
+            continue
+        if i == length - 1:
+            result[i] = sum(values[i - length + 1 : i + 1]) / length
+        else:
+            result[i] = alpha * values[i] + (1 - alpha) * result[i - 1]
+    return result
+
+
+def _ema_series(values: Sequence[float], length: int) -> List[float]:
+    """Standard EMA, matching Pine's `ta.ema` (SMA-seeded EMA)."""
+    n = len(values)
+    result: List[float] = [float("nan")] * n
+    alpha = 2.0 / (length + 1)
+    for i in range(n):
+        if i < length - 1:
+            continue
+        if i == length - 1:
+            result[i] = sum(values[i - length + 1 : i + 1]) / length
+        else:
+            result[i] = alpha * values[i] + (1 - alpha) * result[i - 1]
+    return result
+
+
+def _sma_series(values: Sequence[float], length: int) -> List[float]:
+    """Standard simple moving average, matching Pine's `ta.sma`."""
+    n = len(values)
+    result: List[float] = [float("nan")] * n
+    for i in range(n):
+        if i < length - 1:
+            continue
+        result[i] = sum(values[i - length + 1 : i + 1]) / length
+    return result
+
+
+def _wilder_cumulative_smooth(values: Sequence[float], length: int) -> List[float]:
+    """
+    Matches the specific recursion used inline in the original
+    `filter_adx`/`n_adx` Pine code -- `x := nz(x[1]) - nz(x[1])/length + v`,
+    seeded at 0 from the very first bar. This is distinct from `_rma`
+    (which is SMA-seeded), so it is kept as a separate helper rather than
+    reusing `_rma` for the sake of exact fidelity.
+    """
+    n = len(values)
+    result: List[float] = [0.0] * n
+    prev = 0.0
+    for i in range(n):
+        prev = prev - prev / length + values[i]
+        result[i] = prev
+    return result
+
+
+def _true_range(high: Sequence[float], low: Sequence[float], close: Sequence[float]) -> List[float]:
+    """max(high-low, |high-close_prev|, |low-close_prev|); close_prev = 0 on bar 0 (nz default)."""
+    n = len(close)
+    tr: List[float] = [0.0] * n
+    for i in range(n):
+        prev_close = close[i - 1] if i > 0 else 0.0
+        tr[i] = max(high[i] - low[i], abs(high[i] - prev_close), abs(low[i] - prev_close))
+    return tr
+
+
+def _average_true_range(
+    high: Sequence[float], low: Sequence[float], close: Sequence[float], length: int
+) -> List[float]:
+    """Matches Pine's `ta.atr(length)` = RMA of True Range."""
+    return _rma(_true_range(high, low, close), length)
+
+
+def _volatility_filter(
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    min_length: int,
+    max_length: int,
+    enabled: bool,
+) -> List[bool]:
+    """Pine: `useVolatilityFilter ? ta.atr(minLength) > ta.atr(maxLength) : true`."""
+    n = len(close)
+    if not enabled:
+        return [True] * n
+    recent_atr = _average_true_range(high, low, close, min_length)
+    historical_atr = _average_true_range(high, low, close, max_length)
+    # NaN comparisons are False in Python, which correctly fails the filter
+    # during the ATR warm-up period without any special-casing.
+    return [r > h for r, h in zip(recent_atr, historical_atr)]
+
+
+def _regime_filter(
+    regime_source: Sequence[float],
+    high: Sequence[float],
+    low: Sequence[float],
+    threshold: float,
+    enabled: bool,
+) -> List[bool]:
+    """
+    Matches MLExtensions' `regime_filter`: an adaptive (KLMF) trend line
+    whose bar-to-bar slope is compared to its own 200-bar EMA. `regime_source`
+    is `ohlc4` in the original script, NOT `close` -- callers must pass ohlc4.
+    """
+    n = len(regime_source)
+    if not enabled:
+        return [True] * n
+
+    value1 = 0.0
+    value2 = 0.0
+    klmf = 0.0
+    abs_curve_slope: List[float] = [0.0] * n
+
+    for i in range(n):
+        src = regime_source[i]
+        src_prev = regime_source[i - 1] if i > 0 else src
+        value1 = 0.2 * (src - src_prev) + 0.8 * value1
+        value2 = 0.1 * (high[i] - low[i]) + 0.8 * value2
+        omega = abs(value1 / value2) if value2 != 0 else 0.0
+        alpha = (-(omega**2) + math.sqrt(omega**4 + 16 * omega**2)) / 8
+        new_klmf = alpha * src + (1 - alpha) * klmf
+        abs_curve_slope[i] = abs(new_klmf - klmf)
+        klmf = new_klmf
+
+    exp_avg_abs_curve_slope = _ema_series(abs_curve_slope, 200)
+
+    result: List[bool] = [False] * n
+    for i in range(n):
+        denom = exp_avg_abs_curve_slope[i]
+        if math.isnan(denom) or denom == 0:
+            result[i] = False  # EMA(200) warm-up not complete yet.
+            continue
+        normalized_slope_decline = (abs_curve_slope[i] - denom) / denom
+        result[i] = normalized_slope_decline >= threshold
+    return result
+
+
+def _adx_filter(
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    length: int,
+    threshold: float,
+    enabled: bool,
+) -> List[bool]:
+    """Matches MLExtensions' `filter_adx`: classic DI+/DI-/DX/ADX, ADX > threshold."""
+    n = len(close)
+    if not enabled:
+        return [True] * n
+
+    tr: List[float] = [0.0] * n
+    dm_plus: List[float] = [0.0] * n
+    dm_minus: List[float] = [0.0] * n
+    for i in range(n):
+        prev_high = high[i - 1] if i > 0 else 0.0
+        prev_low = low[i - 1] if i > 0 else 0.0
+        prev_close = close[i - 1] if i > 0 else 0.0
+        tr[i] = max(high[i] - low[i], abs(high[i] - prev_close), abs(low[i] - prev_close))
+        up_move = high[i] - prev_high
+        down_move = prev_low - low[i]
+        dm_plus[i] = up_move if (up_move > down_move and up_move > 0) else 0.0
+        dm_minus[i] = down_move if (down_move > up_move and down_move > 0) else 0.0
+
+    tr_smooth = _wilder_cumulative_smooth(tr, length)
+    dm_plus_smooth = _wilder_cumulative_smooth(dm_plus, length)
+    dm_minus_smooth = _wilder_cumulative_smooth(dm_minus, length)
+
+    di_plus = [(p / t * 100) if t != 0 else 0.0 for p, t in zip(dm_plus_smooth, tr_smooth)]
+    di_minus = [(m / t * 100) if t != 0 else 0.0 for m, t in zip(dm_minus_smooth, tr_smooth)]
+    dx = [
+        (abs(p - m) / (p + m) * 100) if (p + m) != 0 else 0.0
+        for p, m in zip(di_plus, di_minus)
+    ]
+    adx = _rma(dx, length)
+
+    return [(a > threshold) if not math.isnan(a) else False for a in adx]
+
+
+def _weighted_kernel_regression(
+    source: Sequence[float], weight_fn: Callable[[int], float], window: int
+) -> List[float]:
+    """
+    Shared sliding-window weighted average behind both kernels:
+    yhat[t] = sum_i w(i)*source[t-i] / sum_i w(i), i = 0..window-1 (clipped
+    at the start of the series). `window` is derived to match Pine's
+    `for i = 0 to array.size(array.from(_src)) + startAtBar` loop, where
+    `array.from(_src)` on a scalar always yields a 1-element array -- i.e.
+    the window is fixed at `startAtBar + 2`, not the full chart length.
+    """
+    n = len(source)
+    weights = [weight_fn(i) for i in range(window)]
+    result: List[float] = [float("nan")] * n
+    for t in range(n):
+        max_i = min(window - 1, t)
+        numerator = 0.0
+        denominator = 0.0
+        for i in range(max_i + 1):
+            w = weights[i]
+            numerator += source[t - i] * w
+            denominator += w
+        result[t] = numerator / denominator if denominator != 0 else source[t]
+    return result
+
+
+def _rational_quadratic_kernel(
+    source: Sequence[float], lookback: int, relative_weight: float, start_at_bar: int
+) -> List[float]:
+    """Matches KernelFunctions' `rationalQuadratic`."""
+    window = start_at_bar + 2
+
+    def weight(i: int) -> float:
+        return (1 + (i**2) / ((lookback**2) * 2 * relative_weight)) ** (-relative_weight)
+
+    return _weighted_kernel_regression(source, weight, window)
+
+
+def _gaussian_kernel(source: Sequence[float], lookback: int, start_at_bar: int) -> List[float]:
+    """Matches KernelFunctions' `gaussian`."""
+    window = start_at_bar + 2
+
+    def weight(i: int) -> float:
+        return math.exp(-(i**2) / (2 * (lookback**2)))
+
+    return _weighted_kernel_regression(source, weight, window)
+
+
+def _kernel_trend_filters(
+    source: Sequence[float], settings: DecisionEngineSettings
+) -> Tuple[List[bool], List[bool]]:
+    """
+    Matches the main script's `isBullish`/`isBearish`: either the Rational
+    Quadratic line's own slope (`useKernelSmoothing=false`, the default), or
+    a crossover-style comparison against the lagged Gaussian line
+    (`useKernelSmoothing=true`).
+    """
+    n = len(source)
+    if not settings.use_kernel_filter:
+        return [True] * n, [True] * n
+
+    yhat1 = _rational_quadratic_kernel(
+        source, settings.kernel_lookback, settings.kernel_relative_weight,
+        settings.kernel_regression_level,
+    )
+    yhat2 = _gaussian_kernel(
+        source, settings.kernel_lookback - settings.kernel_lag, settings.kernel_regression_level
+    )
+
+    is_bullish: List[bool] = [True] * n
+    is_bearish: List[bool] = [True] * n
+    for t in range(n):
+        if settings.use_kernel_smoothing:
+            is_bullish[t] = yhat2[t] >= yhat1[t]
+            is_bearish[t] = yhat2[t] <= yhat1[t]
+        else:
+            previous = yhat1[t - 1] if t > 0 else yhat1[t]
+            is_bullish[t] = previous < yhat1[t]
+            is_bearish[t] = previous > yhat1[t]
+    return is_bullish, is_bearish
+
+
+def _ema_trend_filter(
+    close: Sequence[float], period: int, enabled: bool
+) -> Tuple[List[bool], List[bool]]:
+    """Matches `isEmaUptrend`/`isEmaDowntrend` (no-op `True, True` when disabled, as in Pine)."""
+    n = len(close)
+    if not enabled:
+        return [True] * n, [True] * n
+    ema = _ema_series(close, period)
+    is_up = [(close[i] > ema[i]) if not math.isnan(ema[i]) else False for i in range(n)]
+    is_down = [(close[i] < ema[i]) if not math.isnan(ema[i]) else False for i in range(n)]
+    return is_up, is_down
+
+
+def _sma_trend_filter(
+    close: Sequence[float], period: int, enabled: bool
+) -> Tuple[List[bool], List[bool]]:
+    """Matches `isSmaUptrend`/`isSmaDowntrend` (no-op `True, True` when disabled, as in Pine)."""
+    n = len(close)
+    if not enabled:
+        return [True] * n, [True] * n
+    sma = _sma_series(close, period)
+    is_up = [(close[i] > sma[i]) if not math.isnan(sma[i]) else False for i in range(n)]
+    is_down = [(close[i] < sma[i]) if not math.isnan(sma[i]) else False for i in range(n)]
+    return is_up, is_down
+
+
 class LorentzianStrategy:
     """
     Approximate K-Nearest-Neighbors classifier using Lorentzian distance
     over a configurable set of normalized indicator features.
 
-    Scope: feature engineering, distance computation, neighbor search, and
-    raw direction classification only -- this mirrors the "Core ML Logic"
-    section of the original indicator. Trade-timing filters (volatility,
-    regime, ADX, kernel regression, EMA/SMA trend filters) and position/exit
-    management are intentionally out of scope and belong in separate,
-    composable components that consume `PredictionResult`.
+    Feature engineering, distance computation, and the neighbor vote mirror
+    the original indicator's "Core ML Logic" section. `_run_decision_engine`
+    additionally replays the original's post-prediction decision logic
+    (volatility/regime/ADX filters, the sticky `signal` state machine, and
+    kernel-regression/EMA/SMA confirmation), so `PredictionResult.signal`
+    matches the original indicator's actual BUY/SELL/HOLD behavior rather
+    than just the sign of the raw vote. Position/exit management
+    (`endLongTrade`/`endShortTrade`) remains out of scope, since `Direction`
+    has no fourth state to represent an exit distinct from NEUTRAL.
 
     Indicator instances are injected (Dependency Injection) rather than
     constructed internally, and this class never recomputes or duplicates
@@ -365,15 +760,15 @@ class LorentzianStrategy:
         """
         Run the full pipeline for the most recent bar in `candles`.
 
-        Designed to be called once per new bar (live), or repeatedly with a
-        growing candle window (backtesting); see the module docstring for
-        the complexity implications of the latter.
+        `signal` reflects the original indicator's full post-prediction
+        decision logic (filters, sticky state, kernel/EMA/SMA confirmation
+        -- see `_run_decision_engine`), not just the sign of the raw vote.
         """
         if not candles:
             raise ValueError("Cannot analyze an empty candle sequence.")
 
         dataset = self._build_feature_vector(candles)
-        return self._predict(dataset)
+        return self._predict(dataset, candles)
 
     def _build_feature_vector(self, candles: Sequence[Any]) -> TrainingDataset:
         """
@@ -433,59 +828,182 @@ class LorentzianStrategy:
             for row in zip(*indicator_outputs)
         ]
 
-    # def _predict(self, dataset: TrainingDataset) -> PredictionResult:
-    #     """Classify the most recent bar in `dataset` against all prior bars."""
-    #     if len(dataset) == 0:
-    #         return PredictionResult(prediction=0, signal=Direction.NEUTRAL, neighbors_labels=[])
+    def _compute_prediction_series(
+        self, dataset: TrainingDataset
+    ) -> Tuple[List[int], List[int]]:
+        """
+        Replay the unchanged `approximate_nearest_neighbors` vote for every
+        bar in `dataset`, not just the most recent one.
 
-    #     current_index = len(dataset) - 1
-    #     current = dataset.feature_series[current_index]
+        Why this is necessary: the original indicator's `signal` is sticky
+        (`signal[t] = ... or signal[t-1]`), so whether *today* counts as a
+        fresh BUY/SELL transition depends on the entire history of votes
+        and filters, not just today's vote. `_run_decision_engine` needs
+        that full series to replay the state machine correctly. This does
+        NOT change how any individual vote is computed --
+        `approximate_nearest_neighbors` is called exactly as before, for
+        each bar -- only how many times it's called.
 
-    #     if not current.is_valid:
-    #         # Indicators for the current bar haven't finished warming up.
-    #         return PredictionResult(prediction=0, signal=Direction.NEUTRAL, neighbors_labels=[])
+        Returns (votes_for_every_bar, neighbor_labels_for_the_last_bar).
+        """
+        votes: List[int] = []
+        last_bar_neighbor_labels: List[int] = []
+        last_index = len(dataset) - 1
 
-    #     history = dataset.feature_series[:current_index]
-    #     history_labels = dataset.labels[:current_index]
+        for index in range(len(dataset)):
+            candidate = dataset.feature_series[index]
+            if not candidate.is_valid:
+                votes.append(0)
+                continue
 
-    #     raw_prediction, list_label_tetangga = approximate_nearest_neighbors(
-    #         current, history, history_labels, self._settings
-    #     )
-    #     return PredictionResult(
-    #         prediction=raw_prediction, signal=self._classify(raw_prediction), neighbors_labels=list_label_tetangga
-    #     )
+            history = dataset.feature_series[:index]
+            history_labels = dataset.labels[:index]
+            vote, neighbor_labels = approximate_nearest_neighbors(
+                candidate, history, history_labels, self._settings
+            )
+            votes.append(vote)
+            if index == last_index:
+                last_bar_neighbor_labels = neighbor_labels
 
-    def _predict(self, dataset: TrainingDataset) -> PredictionResult:
-        """Classify the most recent bar in `dataset` against all prior bars."""
-        
+        return votes, last_bar_neighbor_labels
+
+    def _run_decision_engine(self, votes: Sequence[int], candles: Sequence[Any]) -> Direction:
+        """
+        Replay the original indicator's post-prediction decision logic and
+        return the resulting signal for the most recent bar.
+
+        `votes[t]` is the unmodified Lorentzian KNN vote for bar t.
+        Everything below operates strictly *after* that vote, mirroring the
+        original script's "Prediction Filters" and "Entries and Exits"
+        sections:
+
+            filter_all[t]  = volatility_pass[t] and regime_pass[t] and adx_pass[t]
+            signal[t]      = LONG  if votes[t] > 0 and filter_all[t]
+                           = SHORT if votes[t] < 0 and filter_all[t]
+                           = signal[t-1] otherwise   (sticky: a failed
+                             filter freezes the signal, it does not reset it)
+            startLongTrade  = signal flips to LONG on bar t, AND the EMA/SMA
+                              trend filters agree, AND the kernel-regression
+                              filter agrees, all on that same bar
+            startShortTrade = mirror of the above for SHORT
+
+        Only `startLongTrade`/`startShortTrade` on the *last* bar determine
+        the returned `Direction` -- this is exactly what the original
+        script's BUY/SELL plot markers are driven by.
+        """
+        if len(votes) != len(candles):
+            raise ValueError(
+                f"votes and candles must have equal length (got {len(votes)} "
+                f"and {len(candles)})."
+            )
+
+        settings = _DEFAULT_DECISION_ENGINE_SETTINGS
+        n = len(candles)
+
+        open_ = _extract_price_field(candles, "open")
+        high = _extract_price_field(candles, "high")
+        low = _extract_price_field(candles, "low")
+        close = self._extract_source_prices(candles)
+        ohlc4 = [(o + h + l + c) / 4 for o, h, l, c in zip(open_, high, low, close)]
+
+        volatility_pass = _volatility_filter(
+            high, low, close,
+            settings.volatility_min_length, settings.volatility_max_length,
+            settings.use_volatility_filter,
+        )
+        regime_pass = _regime_filter(
+            ohlc4, high, low, settings.regime_threshold, settings.use_regime_filter
+        )
+        adx_pass = _adx_filter(
+            high, low, close, settings.adx_length, settings.adx_threshold,
+            settings.use_adx_filter,
+        )
+
+        is_ema_uptrend, is_ema_downtrend = _ema_trend_filter(
+            close, settings.ema_period, settings.use_ema_filter
+        )
+        is_sma_uptrend, is_sma_downtrend = _sma_trend_filter(
+            close, settings.sma_period, settings.use_sma_filter
+        )
+        is_bullish, is_bearish = _kernel_trend_filters(close, settings)
+
+        previous_signal = Direction.NEUTRAL
+        final_signal = Direction.NEUTRAL
+
+        for t in range(n):
+            filter_all = volatility_pass[t] and regime_pass[t] and adx_pass[t]
+            vote = votes[t]
+
+            if vote > 0 and filter_all:
+                current_signal = Direction.LONG
+            elif vote < 0 and filter_all:
+                current_signal = Direction.SHORT
+            else:
+                current_signal = previous_signal
+
+            is_transition = current_signal != previous_signal
+
+            is_new_buy_signal = (
+                current_signal == Direction.LONG
+                and is_ema_uptrend[t]
+                and is_sma_uptrend[t]
+                and is_transition
+            )
+            is_new_sell_signal = (
+                current_signal == Direction.SHORT
+                and is_ema_downtrend[t]
+                and is_sma_downtrend[t]
+                and is_transition
+            )
+
+            start_long_trade = (
+                is_new_buy_signal and is_bullish[t] and is_ema_uptrend[t] and is_sma_uptrend[t]
+            )
+            start_short_trade = (
+                is_new_sell_signal and is_bearish[t] and is_ema_downtrend[t] and is_sma_downtrend[t]
+            )
+
+            if t == n - 1:
+                if start_long_trade:
+                    final_signal = Direction.LONG
+                elif start_short_trade:
+                    final_signal = Direction.SHORT
+                else:
+                    final_signal = Direction.NEUTRAL
+
+            previous_signal = current_signal
+
+        return final_signal
+
+    def _predict(self, dataset: TrainingDataset, candles: Sequence[Any]) -> PredictionResult:
+        """
+        Classify the most recent bar in `dataset`.
+
+        `prediction`/`neighbors_labels` come straight from the unmodified
+        Lorentzian vote for the current bar. `signal` is the result of
+        replaying the original script's filter + sticky-state-machine
+        decision logic in `_run_decision_engine` -- that is what actually
+        drives BUY/SELL/HOLD in the original indicator, not the sign of
+        `prediction` alone.
+        """
         if len(dataset) == 0:
-            print("🚨 DEBUG ALARM: Keluar karena dataset kosong (len = 0)")
             return PredictionResult(prediction=0, signal=Direction.NEUTRAL, neighbors_labels=[])
 
         current_index = len(dataset) - 1
         current = dataset.feature_series[current_index]
 
-        # 🎯 ALARM 1: Apakah nyangkut di Pintu Darurat?
         if not current.is_valid:
-            print("🚨 DEBUG ALARM: Keluar karena current.is_valid = FALSE (Indikator menit ini dianggap cacat/NaN)")
-            print(f"🚨 BONGKAR ISI CURRENT: {vars(current)}")
+            # Indicators for the current bar haven't finished warming up.
             return PredictionResult(prediction=0, signal=Direction.NEUTRAL, neighbors_labels=[])
 
-        history = dataset.feature_series[:current_index]
-        history_labels = dataset.labels[:current_index]
-
-        raw_prediction, list_label_tetangga = approximate_nearest_neighbors(
-            current, history, history_labels, self._settings
-        )
-
-        # 🎯 ALARM 2: Apakah lolos masuk, tapi gagal dapet tetangga?
-        if len(list_label_tetangga) == 0:
-            print("🚨 DEBUG ALARM: Masuk ke pencarian, tapi 1999 tetangga masa lalu gugur semua kena filter 'continue'!")
+        votes, neighbor_labels = self._compute_prediction_series(dataset)
+        raw_prediction = votes[current_index]
+        final_signal = self._run_decision_engine(votes, candles)
 
         return PredictionResult(
-            prediction=raw_prediction, 
-            signal=self._classify(raw_prediction), 
-            neighbors_labels=list_label_tetangga
+            prediction=raw_prediction,
+            signal=final_signal,
+            neighbors_labels=neighbor_labels,
         )
 
     @staticmethod
@@ -496,3 +1014,4 @@ class LorentzianStrategy:
         if prediction < 0:
             return Direction.SHORT
         return Direction.NEUTRAL
+    

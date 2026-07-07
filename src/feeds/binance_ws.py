@@ -1,11 +1,13 @@
 import websocket
 import time
 from src.feeds.stream import process_kline
+from src.data.market_data import klines_to_df
 from src.indicators.rsi import RSIIndicator
 from src.indicators.adx import ADXIndicator
 from src.indicators.cci import CCIIndicator
 from src.indicators.wt import WTIndicator
-from src.strategies.lorentzian import LorentzianStrategy, Direction
+from src.strategies.lorentzian import LorentzianStrategy
+from src.core.signal import Signal
 from logs.log import log_close
 
 class BinanceWebSocket:
@@ -25,27 +27,36 @@ class BinanceWebSocket:
         )
 
     def on_message(self, ws, message):
-        data = process_kline(message)
+        data_live = process_kline(message)
         
-        if data.get("is_closed", True): 
-            self.data_manager.add_new_candle(data)
+        if data_live.get("is_closed", True): 
+            self.data_manager.add_new_candle(data_live)
             
             candles_all = self.data_manager.get_data()
 
-            hasil_prediksi = self.strategy.analyze(candles_all)
+            df_clean = klines_to_df(candles_all)
+
+            candles_clean_list = df_clean.to_dict('records')
+
+            candle_terakhir = candles_clean_list[-1]
+            harga_close_terakhir = candle_terakhir['close']
+
+            hasil_prediksi = self.strategy.analyze(candles_clean_list)
             angka_voting = hasil_prediksi.prediction
             array_tetangga = hasil_prediksi.neighbors_labels
             
-            hasil_rsi = self.rsi_bot.calculate_rsi(candles_all)
-            hasil_adx = self.adx_bot.calculate_adx(candles_all)
-            hasil_cci = self.cci_bot.calculate_cci(candles_all)
-            hasil_wt = self.wt_bot.calculate_wt(candles_all)
+            hasil_rsi = self.rsi_bot.calculate_rsi(candles_clean_list)
+            hasil_adx = self.adx_bot.calculate_adx(candles_clean_list)
+            hasil_cci = self.cci_bot.calculate_cci(candles_clean_list)
+            hasil_wt = self.wt_bot.calculate_wt(candles_clean_list)
+            
+
+            current_candle_log = candles_clean_list[-1]
 
             if hasil_rsi["rsi"] is not None and hasil_wt["wt1"] is not None:
                 log_close(
-
-                    data_kline=data, 
-                    time_close=data["time_closed"], 
+                    data_kline=current_candle_log, 
+                    time_close=current_candle_log["time_closed"], 
                     rsi_value=hasil_rsi["rsi"], 
                     rsi_smoothing=hasil_rsi["rsi_smoothing"],
                     adx_value=hasil_adx["adx"],
@@ -58,6 +69,10 @@ class BinanceWebSocket:
                     raw_prediction=angka_voting,
                     signal_name=hasil_prediksi.signal.name 
                 )
+                sinyal_bot = Signal.from_lorentzian(
+                    hasil_prediksi, 
+                    harga_close_terakhir
+                    )
 
     def on_error(self, ws, error):
         print("WebSocket Error:", error)

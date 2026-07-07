@@ -1,3 +1,4 @@
+import uuid
 class DataManager:
     def __init__(self, binance_service):
         self.binance = binance_service
@@ -13,13 +14,24 @@ class DataManager:
         self.candles_history = []
         for c in raw_candles:
             self.candles_history.append({
+                "id": uuid.uuid4().hex,  
                 "symbol": symbol,
                 "interval": interval,
+                "time_open": int(c[0]),      
+                "time_closed": int(c[6]), 
+                "first_trade_id": 0,       
+                "last_trade_id": 0,        
+                "open": float(c[1]),     
                 "high": float(c[2]),
                 "low": float(c[3]),
                 "close": float(c[4]), 
-                "time": int(c[0]),
-                "is_closed": True
+                "volume": float(c[5]),
+                "trades_count": int(c[8]),
+                "is_closed": True,
+                "quote_volume": float(c[7]),
+                "taker_buy_base": float(c[9]),
+                "taker_buy_quote": float(c[10]),
+                "ignore": str(c[11])
             })
 
     def get_data(self):

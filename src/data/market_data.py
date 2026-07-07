@@ -1,13 +1,34 @@
 import pandas as pd
 
-def klines_to_df(klines):
-    df = pd.DataFrame(klines, columns=[
-        "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "trades",
-        "taker_buy_base", "taker_buy_quote", "ignore"
-    ])
+def klines_to_df(all_candles_list):
 
-    df["close"] = df["close"].astype(float)
+    df = pd.DataFrame(all_candles_list)
+
+    df["id"] = df["id"].astype(str)
+    df["symbol"] = df["symbol"].astype(str)
+    df["interval"] = df["interval"].astype(str)
+    df["ignore"] = df["ignore"].astype(str)
+    
+    float_columns = [
+        "open", "high", "low", "close", 
+        "volume", "quote_volume", 
+        "taker_buy_base", "taker_buy_quote"
+    ]
+    for col in float_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(float)
+            
+    int_columns = [
+        "time_open", "time_closed", 
+        "first_trade_id", "last_trade_id", 
+        "trades_count"
+    ]
+    for col in int_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(int)
+            
+    df["is_closed"] = df["is_closed"].astype(bool)
+    
     return df
 
 def klines_to_chart(klines):
