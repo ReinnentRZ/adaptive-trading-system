@@ -1,10 +1,12 @@
 import numpy as np
 import talib
 
+from src.config.indicators import INDICATORS
+
 class RSIIndicator:
-    def __init__(self, rsi_period, ma_period):
-        self.rsi_period = rsi_period
-        self.ma_period = ma_period 
+    def __init__(self, rsi_period: int = None, ma_period: int = None):
+        self.rsi_period = rsi_period if rsi_period is not None else INDICATORS.rsi_period
+        self.ma_period = ma_period if ma_period is not None else INDICATORS.rsi_ma_period
 
     def calculate_rsi(self, candles):
 

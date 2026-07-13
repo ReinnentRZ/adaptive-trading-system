@@ -1,22 +1,22 @@
 import time
 from binance.client import Client
-from src.config.api import API_KEY, API_SECRET
+from src.config import MARKET, API_KEY, API_SECRET
 
 class BinanceService:
     def __init__(self):
         self.client = Client(API_KEY, API_SECRET)
 
-    def on_start(self, symbol, interval, limit=200):
+    def on_start(self, symbol: str = MARKET.symbol, interval: str = MARKET.interval, limit: int = MARKET.limit):
         return self.client.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit
         )
         
-    def get_price(self, symbol="BTCUSDT"):
+    def get_price(self, symbol: str = MARKET.symbol):
         return self.client.get_symbol_ticker(symbol=symbol)
 
-    def get_klines(self, symbol, interval, limit=100):
+    def get_klines(self, symbol: str, interval: str, limit: int = MARKET.limit):
         return self.client.get_klines(
             symbol=symbol,
             interval=interval,

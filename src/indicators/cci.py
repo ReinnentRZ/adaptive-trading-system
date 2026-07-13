@@ -1,9 +1,11 @@
 import numpy as np
 import talib
+from src.config.indicators import INDICATORS
+
 class CCIIndicator:
-    def __init__(self, cci_period=20, smoothing_period=14):
-        self.cci_period = cci_period
-        self.smoothing_period = smoothing_period
+    def __init__(self, cci_period: int = None, smoothing_period: int = None):
+        self.cci_period = cci_period if cci_period is not None else INDICATORS.cci_period
+        self.smoothing_period = smoothing_period if smoothing_period is not None else INDICATORS.cci_smoothing_period
 
     def calculate_cci(self, candles):
         if len(candles) < (self.cci_period + self.smoothing_period):

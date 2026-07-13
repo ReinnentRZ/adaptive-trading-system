@@ -1,12 +1,14 @@
 import numpy as np
 import talib
 
+from src.config.indicators import INDICATORS
+
 class WTIndicator:
     # Tambahin wt_sma_length=4 untuk garis sinyal silang (WT2)
-    def __init__(self, channel_length=10, average_length=21, wt_sma_length=4):
-        self.channel_length = channel_length
-        self.average_length = average_length
-        self.wt_sma_length = wt_sma_length
+    def __init__(self, channel_length: int = None, average_length: int = None, wt_sma_length: int = None):
+        self.channel_length = channel_length if channel_length is not None else INDICATORS.wt_channel_length
+        self.average_length = average_length if average_length is not None else INDICATORS.wt_average_length
+        self.wt_sma_length = wt_sma_length if wt_sma_length is not None else INDICATORS.wt_sma_length
 
     def calculate_wt(self, candles):
         if len(candles) < (self.channel_length + self.average_length + self.wt_sma_length):

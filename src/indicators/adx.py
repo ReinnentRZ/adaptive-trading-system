@@ -1,10 +1,12 @@
 import numpy as np
 import talib
 
+from src.config.indicators import INDICATORS
+
 class ADXIndicator:
-    def __init__(self, adx_period=14, smoothing_period=14):
-        self.adx_period = adx_period
-        self.smoothing_period = smoothing_period
+    def __init__(self, adx_period: int = None, smoothing_period: int = None):
+        self.adx_period = adx_period if adx_period is not None else INDICATORS.adx_period
+        self.smoothing_period = smoothing_period if smoothing_period is not None else INDICATORS.adx_smoothing_period
 
     def calculate_adx(self, candles):              
         if len(candles) < (self.adx_period * 2) + self.smoothing_period:

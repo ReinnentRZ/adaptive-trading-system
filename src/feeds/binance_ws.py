@@ -9,15 +9,16 @@ from src.indicators.wt import WTIndicator
 from src.strategies.lorentzian import LorentzianStrategy
 from src.core.signal import Signal
 from logs.log import log_close
+from src.config import WEBSOCKET
 
 class BinanceWebSocket:
     def __init__(self, data_manager):
         self.data_manager = data_manager
         
-        self.rsi_bot = RSIIndicator(rsi_period=14, ma_period=14)
-        self.adx_bot = ADXIndicator(adx_period=14)
-        self.cci_bot = CCIIndicator(cci_period=20, smoothing_period=14)
-        self.wt_bot = WTIndicator(channel_length=10, average_length=21, wt_sma_length=4)
+        self.rsi_bot = RSIIndicator()
+        self.adx_bot = ADXIndicator()
+        self.cci_bot = CCIIndicator()
+        self.wt_bot = WTIndicator()
         
         self.strategy = LorentzianStrategy(
             rsi=self.rsi_bot, 
@@ -82,7 +83,7 @@ class BinanceWebSocket:
 
     def start_stream(self, symbol, interval):
         symbol_lower = symbol.lower()
-        socket = f"wss://stream.binance.com:9443/ws/{symbol_lower}@kline_{interval}"
+        socket = f"{WEBSOCKET.binance_ws_base_url}/{symbol_lower}@kline_{interval}"
         
         while True:
             try:
@@ -94,12 +95,15 @@ class BinanceWebSocket:
                     on_close=self.on_close
                 )
                 
-                ws.run_forever(ping_interval=30, ping_timeout=10)
+                ws.run_forever(
+                    ping_interval=WEBSOCKET.ping_interval, 
+                    ping_timeout=WEBSOCKET.ping_timeout
+                )
                 
                 print("Koneksi ditutup secara normal. Mencoba menyambung kembali...")
                 
             except Exception as e:
                 print(f"Terjadi kesalahan koneksi: {e}")
             
-            print("Koneksi terputus. Menunggu 5 detik sebelum menyambung ulang...")
-            time.sleep(5)
+            print(f"Koneksi terputus. Menunggu {WEBSOCKET.reconnect_delay_seconds} detik sebelum menyambung ulang...")
+            time.sleep(WEBSOCKET.reconnect_delay_seconds)

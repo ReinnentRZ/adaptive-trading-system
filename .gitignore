@@ -3,6 +3,8 @@
 venv/
 env/
 
+#
+
 # Mengabaikan File Konfirmasi Rahasia (API Key)
 .env
 
@@ -11,3 +13,7 @@ tempCodeRunnerFile.py
 **/__pycache__/
 .DS_Store
 logs.txt
+
+# Mengabaikan File Konfigurasi Agen (Antigravity)
+AGENTS.md
+.agents/

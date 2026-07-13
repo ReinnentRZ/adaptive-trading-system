@@ -1,6 +1,7 @@
 import os
 import psutil
 from datetime import datetime
+from src.config import LOGGING
 
 def log_close(
     data_kline, time_close, 
@@ -44,15 +45,12 @@ def log_close(
     terminal_format = (
         f"[{waktu}]  "
         f"Close: {harga_close:<9.2f}  |  "
-        #f"RSI: {rsi_val:<6.2f}  |  "
-        #f"ADX: {adx_val:<6.2f}  |  "
-        #f"CCI: {cci_val:<8.2f}  |  "
-        #f"WT1: {wt1_val:<7.2f}  |  "
         f"VOTE: {vote_text:<4}  |  "
         f"SIGNAL: {signal_text}  |  "
         f"RAM: {ram_usage:.1f} MB"
     )
-    print(terminal_format)
+    if LOGGING.enable_console_log:
+        print(terminal_format)
 
     # -------------------------------------------------------------
     # HASIL 2: FORMAT UNTUK LOGS.TXT (Lengkap dengan data Smoothing)
@@ -71,7 +69,9 @@ def log_close(
     )
 
     # Memastikan folder logs ada sebelum menulis file agar tidak error
-    os.makedirs("logs", exist_ok=True)
+    log_dir = os.path.dirname(LOGGING.log_file_path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
     
-    with open("logs/logs.txt", "a", encoding="utf-8") as f:
+    with open(LOGGING.log_file_path, "a", encoding="utf-8") as f:
         f.write(file_log_format + "\n")

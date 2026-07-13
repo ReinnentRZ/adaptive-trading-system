@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
+from src.config.strategy import STRATEGY
 from src.indicators.adx import ADXIndicator
 from src.indicators.cci import CCIIndicator
 from src.indicators.rsi import RSIIndicator
@@ -145,9 +146,9 @@ class LorentzianSettings:
     from silently drifting apart if one is tuned without the other.
     """
 
-    neighbors_count: int = 8
-    max_bars_back: int = 2000
-    label_horizon: int = 4
+    neighbors_count: int = STRATEGY.neighbors_count
+    max_bars_back: int = STRATEGY.max_bars_back
+    label_horizon: int = STRATEGY.label_horizon
 
     def __post_init__(self) -> None:
         if self.neighbors_count < 1:
@@ -170,29 +171,29 @@ class DecisionEngineSettings:
     `LorentzianStrategy._run_decision_engine`).
     """
 
-    use_volatility_filter: bool = True
-    volatility_min_length: int = 1
-    volatility_max_length: int = 10
+    use_volatility_filter: bool = STRATEGY.use_volatility_filter
+    volatility_min_length: int = STRATEGY.volatility_min_length
+    volatility_max_length: int = STRATEGY.volatility_max_length
 
-    use_regime_filter: bool = True
-    regime_threshold: float = -0.1
+    use_regime_filter: bool = STRATEGY.use_regime_filter
+    regime_threshold: float = STRATEGY.regime_threshold
 
-    use_adx_filter: bool = False
-    adx_length: int = 14
-    adx_threshold: int = 20
+    use_adx_filter: bool = STRATEGY.use_adx_filter
+    adx_length: int = STRATEGY.adx_length
+    adx_threshold: int = STRATEGY.adx_threshold
 
-    use_ema_filter: bool = False
-    ema_period: int = 200
+    use_ema_filter: bool = STRATEGY.use_ema_filter
+    ema_period: int = STRATEGY.ema_period
 
-    use_sma_filter: bool = False
-    sma_period: int = 200
+    use_sma_filter: bool = STRATEGY.use_sma_filter
+    sma_period: int = STRATEGY.sma_period
 
-    use_kernel_filter: bool = True
-    use_kernel_smoothing: bool = False
-    kernel_lookback: int = 8
-    kernel_relative_weight: float = 8.0
-    kernel_regression_level: int = 25
-    kernel_lag: int = 2
+    use_kernel_filter: bool = STRATEGY.use_kernel_filter
+    use_kernel_smoothing: bool = STRATEGY.use_kernel_smoothing
+    kernel_lookback: int = STRATEGY.kernel_lookback
+    kernel_relative_weight: float = STRATEGY.kernel_relative_weight
+    kernel_regression_level: int = STRATEGY.kernel_regression_level
+    kernel_lag: int = STRATEGY.kernel_lag
 
 
 _DEFAULT_DECISION_ENGINE_SETTINGS = DecisionEngineSettings()
@@ -747,6 +748,7 @@ class LorentzianStrategy:
         cci: CCIIndicator,
         wt: WTIndicator,
         settings: Optional[LorentzianSettings] = None,
+        decision_settings: Optional[DecisionEngineSettings] = None,
         source_extractor: PriceExtractor = _default_close_extractor,
     ) -> None:
         self._rsi = rsi
@@ -754,6 +756,7 @@ class LorentzianStrategy:
         self._cci = cci
         self._wt = wt
         self._settings = settings or LorentzianSettings()
+        self._decision_settings = decision_settings or DecisionEngineSettings()
         self._extract_source_prices = source_extractor
 
     def analyze(self, candles: Sequence[Any]) -> PredictionResult:
@@ -897,7 +900,7 @@ class LorentzianStrategy:
                 f"and {len(candles)})."
             )
 
-        settings = _DEFAULT_DECISION_ENGINE_SETTINGS
+        settings = self._decision_settings
         n = len(candles)
 
         open_ = _extract_price_field(candles, "open")
