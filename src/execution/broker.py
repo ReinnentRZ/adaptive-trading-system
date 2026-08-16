@@ -1,13 +1,16 @@
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import Optional
 from src.models.order import Order
 from src.models.position import Position
 from src.models.trade import Trade
 
+
 class Broker(ABC):
     """
     Abstract Base Class (Interface) representing a Broker/Exchange connection.
     Defines methods for execution, position tracking, and account querying.
+    All numeric/financial values utilize Decimal for precision.
     """
     @abstractmethod
     def execute_order(self, order: Order) -> Trade:
@@ -25,7 +28,12 @@ class Broker(ABC):
         pass
 
     @abstractmethod
-    def close_active_position(self, symbol: str, exit_price: float, timestamp: float) -> Optional[Trade]:
+    def close_active_position(
+        self,
+        symbol: str,
+        exit_price: float | Decimal,
+        timestamp: float
+    ) -> Optional[Trade]:
         """
         Closes the active Position for a given symbol at the specified exit price.
         Returns the resulting Trade execution of the exit.
@@ -33,7 +41,7 @@ class Broker(ABC):
         pass
 
     @abstractmethod
-    def get_balance(self) -> float:
+    def get_balance(self) -> Decimal:
         """
         Retrieves the current cash balance of the trading account.
         """

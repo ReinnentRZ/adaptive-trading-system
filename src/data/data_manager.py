@@ -1,17 +1,27 @@
 import uuid
+from collections import deque
+from typing import List, Sequence
+from src.services.binance_client import BinanceService
+
+
 class DataManager:
-    def __init__(self, binance_service):
-        self.binance = binance_service
-        self.candles_history = [] 
-        self.limit = 200
+    """
+    Manages historical candles utilizing a bounded collections.deque
+    to prevent memory exhaustion.
+    """
+    def __init__(self, binance_service: BinanceService):
+        self.binance: BinanceService = binance_service
+        self.candles_history: deque = deque()
+        self.limit: int = 200
 
-    def initialize_bot(self, symbol, interval, limit):
-
+    def initialize_bot(self, symbol: str, interval: str, limit: int) -> None:
+        """
+        Initializes historical candles buffer by fetching recent data from the service.
+        """
         self.limit = limit
-
-        raw_candles = self.binance.get_klines(symbol=symbol, interval=interval, limit=limit)
+        self.candles_history = deque(maxlen=self.limit)
+        raw_candles: Sequence = self.binance.get_klines(symbol=symbol, interval=interval, limit=limit)
         
-        self.candles_history = []
         for c in raw_candles:
             self.candles_history.append({
                 "id": uuid.uuid4().hex,  
@@ -34,12 +44,14 @@ class DataManager:
                 "ignore": str(c[11])
             })
 
-    def get_data(self):
-        return self.candles_history
+    def get_data(self) -> List[dict]:
+        """
+        Returns the historical candles buffer as a list of dictionaries.
+        """
+        return list(self.candles_history)
 
-    def add_new_candle(self, new_candle):
-
+    def add_new_candle(self, new_candle: dict) -> None:
+        """
+        Appends a new candle to the bounded history. Automatically handles max length eviction.
+        """
         self.candles_history.append(new_candle)
-        if len(self.candles_history) > self.limit:
-            self.candles_history.pop(0)
-            

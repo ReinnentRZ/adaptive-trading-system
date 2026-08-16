@@ -1,6 +1,11 @@
 import websocket
 import time
+import ssl
+import certifi
+import logging
 from src.feeds.stream import process_kline
+
+logger = logging.getLogger("trading_system")
 from src.data.market_data import klines_to_df
 from src.indicators.rsi import RSIIndicator
 from src.indicators.adx import ADXIndicator
@@ -95,10 +100,10 @@ class BinanceWebSocket:
                     )
 
     def on_error(self, ws, error):
-        print("WebSocket Error:", error)
+        logger.error(f"WebSocket Error: {error}")
 
     def on_close(self, ws, *args):
-        print("WebSocket Connection Closed:", args)
+        logger.warning(f"WebSocket Connection Closed: {args}")
 
     def start_stream(self, symbol, interval):
         symbol_lower = symbol.lower()
@@ -106,7 +111,7 @@ class BinanceWebSocket:
         
         while True:
             try:
-                print(f"Membuka pintu gerbang WebSocket untuk {symbol} [{interval}]...")
+                logger.info(f"Opening WebSocket connection for {symbol} [{interval}]...")
                 ws = websocket.WebSocketApp(
                     socket,
                     on_message=self.on_message,
@@ -116,13 +121,14 @@ class BinanceWebSocket:
                 
                 ws.run_forever(
                     ping_interval=WEBSOCKET.ping_interval, 
-                    ping_timeout=WEBSOCKET.ping_timeout
+                    ping_timeout=WEBSOCKET.ping_timeout,
+                    sslopt={"ca_certs": certifi.where()}
                 )
                 
-                print("Koneksi ditutup secara normal. Mencoba menyambung kembali...")
+                logger.warning("Connection closed normally. Attempting to reconnect...")
                 
             except Exception as e:
-                print(f"Terjadi kesalahan koneksi: {e}")
+                logger.error(f"Connection exception occurred: {e}")
             
-            print(f"Koneksi terputus. Menunggu {WEBSOCKET.reconnect_delay_seconds} detik sebelum menyambung ulang...")
+            logger.warning(f"Connection lost. Waiting {WEBSOCKET.reconnect_delay_seconds} seconds before reconnecting...")
             time.sleep(WEBSOCKET.reconnect_delay_seconds)

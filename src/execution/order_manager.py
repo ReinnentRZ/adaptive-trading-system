@@ -1,12 +1,17 @@
-import uuid
+import hashlib
+import logging
+from decimal import Decimal
 from typing import Optional
+
 from src.core.enums import OrderType, OrderStatus
 from src.core.signal import Signal
 from src.config.trading import TRADING
 from src.config.strategy import STRATEGY
 from src.models.order import Order
-from src.models.position import Position
 from src.execution.broker import Broker
+
+logger = logging.getLogger("trading_system")
+
 
 class OrderManager:
     """
@@ -23,8 +28,11 @@ class OrderManager:
         Decides whether to execute position entries, closures, or reversals.
         """
         # Validate confidence threshold
-        if signal.confidence < STRATEGY.confidence_threshold:
-            print(f"[OrderManager] Signal ignored: Confidence ({signal.confidence}%) is below threshold ({STRATEGY.confidence_threshold}%).")
+        if float(signal.confidence) < STRATEGY.confidence_threshold:
+            logger.info(
+                f"[OrderManager] Signal ignored: Confidence ({signal.confidence}%) "
+                f"is below threshold ({STRATEGY.confidence_threshold}%)."
+            )
             return None
 
         active_position = self.broker.get_active_position(symbol)
@@ -32,14 +40,24 @@ class OrderManager:
         if active_position is not None:
             # If we have an active position in the opposite direction of the signal, we close it (position reversal)
             if active_position.direction != signal.type:
-                print(f"[OrderManager] Signal direction ({signal.type.name}) opposite to active position ({active_position.direction.name}). Closing position.")
-                self.broker.close_active_position(symbol, exit_price=signal.candle_close, timestamp=timestamp)
+                logger.warning(
+                    f"[OrderManager] Signal direction ({signal.type.name}) opposite to "
+                    f"active position ({active_position.direction.name}). Closing position."
+                )
+                self.broker.close_active_position(
+                    symbol=symbol,
+                    exit_price=float(signal.candle_close),
+                    timestamp=timestamp
+                )
                 
                 # After closing the old position, open a new one in the direction of the signal
                 return self._create_and_execute_order(signal, symbol, timestamp)
             else:
-                # Same direction signal - ignore to avoid over-exposure (or scaling in can be enabled if desired)
-                print(f"[OrderManager] Hold existing {active_position.direction.name} position. New signal in same direction ignored.")
+                # Same direction signal - ignore to avoid over-exposure
+                logger.info(
+                    f"[OrderManager] Hold existing {active_position.direction.name} position. "
+                    f"New signal in same direction ignored."
+                )
                 return None
         else:
             # No active position exists, create a new entry order
@@ -54,46 +72,63 @@ class OrderManager:
         if position is None:
             return
 
-        # Calculate PnL percentage based on average entry price
+        c_price = Decimal(str(current_price))
+        
+        # Calculate PnL percentage using Decimal precision
         if position.direction == OrderType.LONG:
-            pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100.0
+            pnl_pct = float(((c_price - position.entry_price) / position.entry_price) * Decimal("100.0"))
         elif position.direction == OrderType.SHORT:
-            pnl_pct = ((position.entry_price - current_price) / position.entry_price) * 100.0
+            pnl_pct = float(((position.entry_price - c_price) / position.entry_price) * Decimal("100.0"))
         else:
             return
 
         # Check Stop Loss (SL)
         if pnl_pct <= -TRADING.stop_loss_pct:
-            print(f"[OrderManager] Stop Loss triggered for {symbol} | Price: {current_price:.2f} | PnL: {pnl_pct:.2f}%")
+            logger.warning(
+                f"[OrderManager] Stop Loss triggered for {symbol} | "
+                f"Price: {current_price:.2f} | PnL: {pnl_pct:.2f}%"
+            )
             self.broker.close_active_position(symbol, exit_price=current_price, timestamp=timestamp)
         
         # Check Take Profit (TP)
         elif pnl_pct >= TRADING.take_profit_pct:
-            print(f"[OrderManager] Take Profit triggered for {symbol} | Price: {current_price:.2f} | PnL: {pnl_pct:.2f}%")
+            logger.warning(
+                f"[OrderManager] Take Profit triggered for {symbol} | "
+                f"Price: {current_price:.2f} | PnL: {pnl_pct:.2f}%"
+            )
             self.broker.close_active_position(symbol, exit_price=current_price, timestamp=timestamp)
 
     def _create_and_execute_order(self, signal: Signal, symbol: str, timestamp: float) -> Order:
         """
         Helper method to create and send an order to the broker.
         """
-        # Calculate order quantity based on allocated risk capital in USDT
-        quantity = TRADING.trade_quantity_usdt / signal.candle_close
+        # Calculate order quantity using Decimal
+        close_dec = Decimal(str(signal.candle_close))
+        trade_qty_usdt_dec = Decimal(str(TRADING.trade_quantity_usdt))
+        quantity = trade_qty_usdt_dec / close_dec
 
-        order_id = f"ord-{uuid.uuid4().hex[:8]}"
+        # Deterministic and traceable order ID (idempotency key)
+        # Unique to timestamp, symbol, and signal type direction
+        raw_payload = f"{timestamp}-{symbol}-{signal.type.name}"
+        order_id = f"ord-{hashlib.sha256(raw_payload.encode()).hexdigest()[:12]}"
+
         order = Order(
             order_id=order_id,
             symbol=symbol,
             type=signal.type,
             quantity=quantity,
-            price=signal.candle_close,
+            price=close_dec,
             status=OrderStatus.PENDING,
             timestamp=timestamp,
             signal=signal
         )
 
-        print(f"[OrderManager] Placing {order.type.name} entry order for {symbol} | Qty: {order.quantity:.6f} | Price: {order.price:.2f}")
+        logger.info(
+            f"[OrderManager] Placing {order.type.name} entry order for {symbol} | "
+            f"Qty: {float(order.quantity):.6f} | Price: {float(order.price):.2f}"
+        )
         try:
             self.broker.execute_order(order)
         except ValueError as e:
-            print(f"[OrderManager] Failed to execute order: {e}")
+            logger.error(f"[OrderManager] Failed to execute order: {e}")
         return order
