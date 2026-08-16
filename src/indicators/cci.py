@@ -1,36 +1,65 @@
 import numpy as np
+import pandas as pd
 import talib
-from src.config.indicators import INDICATORS
+from typing import Optional, Union, Sequence
 
-class CCIIndicator:
-    def __init__(self, cci_period: int = None, smoothing_period: int = None):
+from src.config.indicators import INDICATORS
+from src.indicators.base import BaseIndicator, CCIResult
+
+
+class CCIIndicator(BaseIndicator):
+    def __init__(self, cci_period: Optional[int] = None, smoothing_period: Optional[int] = None):
         self.cci_period = cci_period if cci_period is not None else INDICATORS.cci_period
         self.smoothing_period = smoothing_period if smoothing_period is not None else INDICATORS.cci_smoothing_period
 
-    def calculate_cci(self, candles):
-        if len(candles) < (self.cci_period + self.smoothing_period):
-            return {"cci": None, "cci_smoothing": None,"series": [float('nan')] * len(candles)}
-        
-        high_prices = np.array([float(h["high"]) for h in candles], dtype=np.float64)
-        low_prices = np.array([float(l["low"]) for l in candles], dtype=np.float64)
-        close_prices = np.array([float(c["close"]) for c in candles], dtype=np.float64)
-    
-        cci_values = talib.CCI(high_prices, low_prices, close_prices, timeperiod=self.cci_period)
+    def calculate(self, data: pd.DataFrame) -> CCIResult:
+        """
+        Calculate the Commodity Channel Index (CCI) indicator.
 
+        Args:
+            data: pd.DataFrame with columns ['open', 'high', 'low', 'close', 'volume']
+                  of type float64.
+
+        Returns:
+            CCIResult containing current CCI, smoothed CCI, and the full series.
+        """
+        df = self._prepare_data(data)
+        min_length = self.cci_period + self.smoothing_period
+
+        if len(df) < min_length:
+            return CCIResult(
+                current=None,
+                smoothing=None,
+                series=np.full(len(df), np.nan)
+            )
+
+        high_prices = df["high"].to_numpy()
+        low_prices = df["low"].to_numpy()
+        close_prices = df["close"].to_numpy()
+
+        cci_values = talib.CCI(high_prices, low_prices, close_prices, timeperiod=self.cci_period)
         cci_smoothing_values = talib.SMA(cci_values, timeperiod=self.smoothing_period)
-        
+
         current_cci = cci_values[-1]
         current_smoothing = cci_smoothing_values[-1]
 
         if np.isnan(current_cci) or np.isnan(current_smoothing):
-            return {
-                "cci": None, 
-                "cci_smoothing": None,
-                "series": np.full(len(candles), np.nan)
-            }
-        
-        return {
-            "cci": round(current_cci, 2),
-            "cci_smoothing": round(current_smoothing, 2),
-            "series": cci_values
-        }
+            return CCIResult(
+                current=None,
+                smoothing=None,
+                series=np.full(len(df), np.nan)
+            )
+
+        return CCIResult(
+            current=float(round(current_cci, 2)),
+            smoothing=float(round(current_smoothing, 2)),
+            series=cci_values
+        )
+
+    def calculate_cci(self, candles: Union[pd.DataFrame, Sequence[dict]]) -> CCIResult:
+        """
+        Legacy method for backward compatibility.
+        """
+        if not isinstance(candles, pd.DataFrame):
+            candles = pd.DataFrame(candles)
+        return self.calculate(candles)

@@ -92,5 +92,8 @@ class OrderManager:
         )
 
         print(f"[OrderManager] Placing {order.type.name} entry order for {symbol} | Qty: {order.quantity:.6f} | Price: {order.price:.2f}")
-        self.broker.execute_order(order)
+        try:
+            self.broker.execute_order(order)
+        except ValueError as e:
+            print(f"[OrderManager] Failed to execute order: {e}")
         return order

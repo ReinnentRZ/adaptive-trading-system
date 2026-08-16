@@ -9,11 +9,12 @@ from src.indicators.wt import WTIndicator
 from src.strategies.lorentzian import LorentzianStrategy
 from src.core.signal import Signal
 from logs.log import log_close
-from src.config import WEBSOCKET
+from src.config import WEBSOCKET, MARKET
 
 class BinanceWebSocket:
-    def __init__(self, data_manager):
+    def __init__(self, data_manager, order_manager):
         self.data_manager = data_manager
+        self.order_manager = order_manager
         
         self.rsi_bot = RSIIndicator()
         self.adx_bot = ADXIndicator()
@@ -30,6 +31,16 @@ class BinanceWebSocket:
     def on_message(self, ws, message):
         data_live = process_kline(message)
         
+        # 1. Real-time Stop Loss & Take Profit check on every single WebSocket tick update (multi-tick support)
+        harga_close_live = float(data_live["close"])
+        waktu_live = data_live["time_closed"]
+        self.order_manager.update_market_price(
+            symbol=MARKET.symbol,
+            current_price=harga_close_live,
+            timestamp=waktu_live
+        )
+        
+        # 2. Strategy and signal processing ONLY executed when a candle officially closes
         if data_live.get("is_closed", True): 
             self.data_manager.add_new_candle(data_live)
             
@@ -73,6 +84,14 @@ class BinanceWebSocket:
                 sinyal_bot = Signal.from_lorentzian(
                     hasil_prediksi, 
                     harga_close_terakhir
+                )
+
+                # Eksekusi sinyal jika terbentuk sinyal buy/sell (bukan HOLD/None)
+                if sinyal_bot is not None:
+                    self.order_manager.process_signal(
+                        signal=sinyal_bot,
+                        symbol=MARKET.symbol,
+                        timestamp=current_candle_log["time_closed"]
                     )
 
     def on_error(self, ws, error):

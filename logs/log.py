@@ -49,8 +49,8 @@ def log_close(
         f"SIGNAL: {signal_text}  |  "
         f"RAM: {ram_usage:.1f} MB"
     )
-    if LOGGING.enable_console_log:
-        print(terminal_format)
+    #if LOGGING.enable_console_log:
+    #    print(terminal_format)
 
     # -------------------------------------------------------------
     # HASIL 2: FORMAT UNTUK LOGS.TXT (Lengkap dengan data Smoothing)

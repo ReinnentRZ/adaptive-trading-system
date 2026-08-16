@@ -37,6 +37,12 @@ class MockBroker(Broker):
         trade_value = order.price * order.quantity
         fee_amount = trade_value * (TRADING.commission_fee_pct / 100.0)
 
+        # Cash balance validation
+        required_balance = trade_value + fee_amount
+        if self.cash_balance < required_balance:
+            order.status = OrderStatus.CANCELED
+            raise ValueError("Insufficient mock balance.")
+
         # Generate unique trade ID
         trade_id = f"t-{uuid.uuid4().hex[:8]}"
 

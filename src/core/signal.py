@@ -22,15 +22,11 @@ class Signal:
         else:
             return None 
 
-        # 1. Ambil nilai voting asli dari model
-        # (Asumsi: prediction_result punya properti .prediction atau sejenisnya yang menyimpan angka vote)
         raw_vote = int(prediction_result.prediction)
         
-        # 2. Hitung Confidence Percentage
-        # Rumus: (Jumlah Vote Absolut / Total Tetangga) * 100
-        # Contoh: Jika vote +6 dari 8 tetangga, maka (6/8) * 100 = 75.0%
+
         confidence = (abs(raw_vote) / neighbors_count) * 100.0
-        confidence = round(confidence, 2) # Dibulatkan 2 angka di belakang koma
+        confidence = round(confidence, 2) 
 
         print(f"{order_type.name} Berhasil dibuat | Close: {candle_close} | Vote: {raw_vote} | Conf: {confidence}%")
 
