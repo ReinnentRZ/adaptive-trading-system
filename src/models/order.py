@@ -22,6 +22,9 @@ class Order:
     filled_quantity: Decimal = Decimal("0.0")
     avg_fill_price: Decimal = Decimal("0.0")
     fees: Decimal = Decimal("0.0")
+    atr_at_entry: Optional[Decimal] = None
+    sl_price: Optional[Decimal] = None
+    tp_price: Optional[Decimal] = None
 
     @property
     def is_filled(self) -> bool:

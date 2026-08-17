@@ -1,7 +1,3 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-API_KEY = os.getenv("BINANCE_API_KEY")
-API_SECRET = os.getenv("BINANCE_SECRET_KEY")
+from src.config import config
+API_KEY = config.api.api_key
+API_SECRET = config.api.api_secret

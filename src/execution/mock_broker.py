@@ -111,7 +111,10 @@ class MockBroker(Broker):
                 position_id=position_id,
                 symbol=order.symbol,
                 direction=order.type,
-                created_at=order.timestamp
+                created_at=order.timestamp,
+                atr_at_entry=order.atr_at_entry,
+                sl_price=order.sl_price,
+                tp_price=order.tp_price
             )
             self.active_positions[order.symbol] = position
 

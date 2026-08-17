@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from src.config.logging import LOGGING
+from src.config import config
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,10 @@ class CandleTelemetry:
     raw_prediction: int
     signal_name: str
     ram_usage_mb: float
+    atr: Optional[float] = None
+    applied_atr_period: Optional[int] = None
+    market_regime: Optional[str] = None
+    target_rr_ratio: Optional[float] = None
 
 
 class TelemetryLogger:
@@ -69,15 +73,27 @@ class TelemetryLogger:
                         neighbours TEXT,
                         raw_prediction INTEGER,
                         signal_name TEXT,
-                        ram_usage_mb REAL
+                        ram_usage_mb REAL,
+                        atr REAL,
+                        applied_atr_period INTEGER,
+                        market_regime TEXT,
+                        target_rr_ratio REAL
                     )
                 """)
-                # Migrasi otomatis jika kolom datetime_wib belum ada
+                # Migrasi otomatis jika kolom datetime_wib, atr, atau kolom dinamis risiko belum ada
                 cursor = conn.cursor()
                 cursor.execute("PRAGMA table_info(telemetry);")
                 columns = [info[1] for info in cursor.fetchall()]
                 if "datetime_wib" not in columns:
                     conn.execute("ALTER TABLE telemetry ADD COLUMN datetime_wib TEXT;")
+                if "atr" not in columns:
+                    conn.execute("ALTER TABLE telemetry ADD COLUMN atr REAL;")
+                if "applied_atr_period" not in columns:
+                    conn.execute("ALTER TABLE telemetry ADD COLUMN applied_atr_period INTEGER;")
+                if "market_regime" not in columns:
+                    conn.execute("ALTER TABLE telemetry ADD COLUMN market_regime TEXT;")
+                if "target_rr_ratio" not in columns:
+                    conn.execute("ALTER TABLE telemetry ADD COLUMN target_rr_ratio REAL;")
 
     def save_telemetry(self, data: CandleTelemetry) -> None:
         neighbours_json = json.dumps(data.neighbours)
@@ -86,8 +102,9 @@ class TelemetryLogger:
                 timestamp, datetime_utc, datetime_wib, close_price,
                 rsi, rsi_smoothing, adx, adx_smoothing,
                 cci, cci_smoothing, wt1, wt2,
-                neighbours, raw_prediction, signal_name, ram_usage_mb
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                neighbours, raw_prediction, signal_name, ram_usage_mb, atr,
+                applied_atr_period, market_regime, target_rr_ratio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             with conn:
@@ -108,7 +125,11 @@ class TelemetryLogger:
                     neighbours_json,
                     data.raw_prediction,
                     data.signal_name,
-                    data.ram_usage_mb
+                    data.ram_usage_mb,
+                    data.atr,
+                    data.applied_atr_period,
+                    data.market_regime,
+                    data.target_rr_ratio
                 ))
 
 
@@ -118,7 +139,7 @@ logger.setLevel(logging.INFO)
 
 if not logger.handlers:
     # Ensure log directories exist
-    log_dir = os.path.dirname(LOGGING.log_file_path)
+    log_dir = os.path.dirname(config.logging.log_file_path)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
 
@@ -132,18 +153,18 @@ if not logger.handlers:
     formatter.converter = lambda ts: datetime.fromtimestamp(ts, tz=wib_tz).timetuple()
 
     # File Handler
-    file_handler = logging.FileHandler(LOGGING.log_file_path, encoding="utf-8")
+    file_handler = logging.FileHandler(config.logging.log_file_path, encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     # Console Handler
-    if LOGGING.enable_console_log:
+    if config.logging.enable_console_log:
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
 # Initialize Telemetry Logger Singleton
-_telemetry_logger = TelemetryLogger(LOGGING.telemetry_db_path)
+_telemetry_logger = TelemetryLogger(config.logging.telemetry_db_path)
 
 
 def log_close(
@@ -159,7 +180,11 @@ def log_close(
     wt2_value: Optional[float],
     array_tetangga: List[int],
     raw_prediction: int,
-    signal_name: str
+    signal_name: str,
+    atr_value: Optional[float] = None,
+    applied_atr_period: Optional[int] = None,
+    market_regime: Optional[str] = None,
+    target_rr_ratio: Optional[float] = None
 ) -> None:
     """
     Dual-Sink Logging Entrypoint:
@@ -188,7 +213,11 @@ def log_close(
         neighbours=list(array_tetangga),
         raw_prediction=int(raw_prediction),
         signal_name=str(signal_name),
-        ram_usage_mb=ram_usage_mb
+        ram_usage_mb=ram_usage_mb,
+        atr=float(atr_value) if atr_value is not None else None,
+        applied_atr_period=int(applied_atr_period) if applied_atr_period is not None else None,
+        market_regime=str(market_regime) if market_regime is not None else None,
+        target_rr_ratio=float(target_rr_ratio) if target_rr_ratio is not None else None
     )
 
     # 3. Save to SQLite

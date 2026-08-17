@@ -25,6 +25,8 @@ class IndicatorResult:
             "cci_smoothing": "smoothing",
             "wt1": "current",
             "wt2": "smoothing",
+            "atr": "current",
+            "current_atr": "current",
             "series": "series"
         }
         attr = key_map.get(key, key)
@@ -81,6 +83,13 @@ class WTResult(IndicatorResult):
     @property
     def wt2(self) -> Optional[float]:
         return self.smoothing
+
+
+@dataclass(frozen=True)
+class ATRResult(IndicatorResult):
+    @property
+    def current_atr(self) -> Optional[float]:
+        return self.current
 
 
 class BaseIndicator(ABC):

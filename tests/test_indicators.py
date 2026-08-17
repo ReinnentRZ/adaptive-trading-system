@@ -7,7 +7,8 @@ from src.indicators.adx import ADXIndicator
 from src.indicators.cci import CCIIndicator
 from src.indicators.rsi import RSIIndicator
 from src.indicators.wt import WTIndicator
-from src.indicators.base import IndicatorResult, RSIResult, ADXResult, CCIResult, WTResult
+from src.indicators.atr import ATRIndicator
+from src.indicators.base import IndicatorResult, RSIResult, ADXResult, CCIResult, WTResult, ATRResult
 
 
 class TestIndicators(unittest.TestCase):
@@ -123,6 +124,34 @@ class TestIndicators(unittest.TestCase):
         self.assertEqual(res.wt1, res.current)
         self.assertEqual(res.wt2, res.smoothing)
 
+    def test_atr_indicator(self):
+        indicator = ATRIndicator(atr_period=14)
+        
+        # 1. Test calculation with DataFrame
+        res = indicator.calculate(self.df)
+        self.assertIsInstance(res, ATRResult)
+        self.assertIsInstance(res.series, np.ndarray)
+        self.assertEqual(len(res.series), self.length)
+        
+        # 2. Test legacy/convenience method
+        res_legacy = indicator.calculate_atr(self.candles_list)
+        self.assertEqual(res.current_atr, res_legacy.current_atr)
+        np.testing.assert_array_equal(res.series, res_legacy.series)
+
+        # 3. Test dict-like mapping
+        self.assertEqual(res["atr"], res.current)
+        self.assertEqual(res["current_atr"], res.current_atr)
+        self.assertEqual(res.current_atr, res.current)
+
+        # 4. Verify against raw TA-Lib values
+        expected_atr = talib.ATR(
+            self.df["high"].to_numpy(),
+            self.df["low"].to_numpy(),
+            self.df["close"].to_numpy(),
+            timeperiod=14
+        )
+        np.testing.assert_array_equal(res.series, expected_atr)
+
     def test_insufficient_data_handling(self):
         short_df = self.df.iloc[:5]  # Only 5 rows
         
@@ -132,6 +161,12 @@ class TestIndicators(unittest.TestCase):
         self.assertIsNone(res.smoothing)
         self.assertTrue(np.isnan(res.series).all())
         self.assertEqual(len(res.series), 5)
+
+        atr_ind = ATRIndicator(atr_period=14)
+        res_atr = atr_ind.calculate(short_df)
+        self.assertIsNone(res_atr.current_atr)
+        self.assertTrue(np.isnan(res_atr.series).all())
+        self.assertEqual(len(res_atr.series), 5)
 
 
 if __name__ == "__main__":

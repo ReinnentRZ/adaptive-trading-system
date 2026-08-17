@@ -24,6 +24,9 @@ class Position:
     closed_at: Optional[float] = None  # Timestamp when the position was fully closed
     entry_trades: List[Trade] = field(default_factory=list)  # List of trades that opened/increased this position
     exit_trades: List[Trade] = field(default_factory=list)  # List of trades that closed/reduced this position
+    atr_at_entry: Optional[Decimal] = None
+    sl_price: Optional[Decimal] = None
+    tp_price: Optional[Decimal] = None
 
     def calculate_unrealized_pnl(self, current_price: Decimal) -> Decimal:
         """

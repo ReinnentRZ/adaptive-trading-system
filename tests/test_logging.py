@@ -57,7 +57,11 @@ class TestLogging(unittest.TestCase):
             neighbours=[1, -1, 1],
             raw_prediction=1,
             signal_name="LONG",
-            ram_usage_mb=75.5
+            ram_usage_mb=75.5,
+            atr=1.23,
+            applied_atr_period=14,
+            market_regime="RANGING",
+            target_rr_ratio=2.0
         )
         
         self.telemetry_logger.save_telemetry(telemetry)
@@ -75,6 +79,10 @@ class TestLogging(unittest.TestCase):
             self.assertEqual(row[13], 1)
             self.assertEqual(row[14], "LONG")
             self.assertEqual(row[15], 75.5)
+            self.assertEqual(row[16], 1.23)
+            self.assertEqual(row[17], 14)
+            self.assertEqual(row[18], "RANGING")
+            self.assertEqual(row[19], 2.0)
 
     def test_log_close_execution(self):
         # Override the logger db path temporarily using patch
@@ -95,7 +103,11 @@ class TestLogging(unittest.TestCase):
                 wt2_value=12.2,
                 array_tetangga=[1, 1, -1],
                 raw_prediction=2,
-                signal_name="LONG"
+                signal_name="LONG",
+                atr_value=1.5,
+                applied_atr_period=10,
+                market_regime="TRENDING",
+                target_rr_ratio=3.0
             )
             
             # Verify data was written to the test database
@@ -107,6 +119,10 @@ class TestLogging(unittest.TestCase):
                 self.assertEqual(row[3], 46000.75)  # close_price
                 self.assertIsNone(row[6])  # adx is None/NULL at index 6
                 self.assertEqual(row[14], "LONG")  # signal_name at index 14
+                self.assertEqual(row[16], 1.5)  # atr_value at index 16
+                self.assertEqual(row[17], 10)
+                self.assertEqual(row[18], "TRENDING")
+                self.assertEqual(row[19], 3.0)
 
 
 if __name__ == "__main__":

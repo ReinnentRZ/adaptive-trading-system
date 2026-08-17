@@ -1,3 +1,4 @@
+from decimal import Decimal
 import websocket
 import time
 import ssl
@@ -11,10 +12,13 @@ from src.indicators.rsi import RSIIndicator
 from src.indicators.adx import ADXIndicator
 from src.indicators.cci import CCIIndicator
 from src.indicators.wt import WTIndicator
+from src.indicators.atr import ATRIndicator
 from src.strategies.lorentzian import LorentzianStrategy
+from src.strategies.risk_engine import AdaptiveRiskCalculator
+from src.core.enums import OrderType
 from src.core.signal import Signal
 from logs.log import log_close
-from src.config import WEBSOCKET, MARKET
+from src.config import config
 
 class BinanceWebSocket:
     def __init__(self, data_manager, order_manager):
@@ -25,6 +29,7 @@ class BinanceWebSocket:
         self.adx_bot = ADXIndicator()
         self.cci_bot = CCIIndicator()
         self.wt_bot = WTIndicator()
+        self.atr_bot = ATRIndicator()
         
         self.strategy = LorentzianStrategy(
             rsi=self.rsi_bot, 
@@ -40,7 +45,7 @@ class BinanceWebSocket:
         harga_close_live = float(data_live["close"])
         waktu_live = data_live["time_closed"]
         self.order_manager.update_market_price(
-            symbol=MARKET.symbol,
+            symbol=config.market.symbol,
             current_price=harga_close_live,
             timestamp=waktu_live
         )
@@ -66,9 +71,21 @@ class BinanceWebSocket:
             hasil_adx = self.adx_bot.calculate_adx(candles_clean_list)
             hasil_cci = self.cci_bot.calculate_cci(candles_clean_list)
             hasil_wt = self.wt_bot.calculate_wt(candles_clean_list)
+            hasil_atr = self.atr_bot.calculate(df_clean)
             
+            current_candle_log = candle_terakhir
 
-            current_candle_log = candles_clean_list[-1]
+            # Calculate dynamic risk parameters for telemetry logging (defaulting to LONG if HOLD)
+            direction_for_risk = OrderType.LONG
+            if hasil_prediksi.signal.name == "SHORT":
+                direction_for_risk = OrderType.SHORT
+
+            risk_params = AdaptiveRiskCalculator.calculate_risk_params(
+                data=df_clean,
+                entry_price=harga_close_terakhir,
+                direction=direction_for_risk,
+                symbol=config.market.symbol
+            )
 
             if hasil_rsi["rsi"] is not None and hasil_wt["wt1"] is not None:
                 log_close(
@@ -84,7 +101,11 @@ class BinanceWebSocket:
                     wt2_value=hasil_wt["wt2"],
                     array_tetangga=array_tetangga,
                     raw_prediction=angka_voting,
-                    signal_name=hasil_prediksi.signal.name 
+                    signal_name=hasil_prediksi.signal.name,
+                    atr_value=risk_params.calculated_atr,
+                    applied_atr_period=risk_params.applied_period,
+                    market_regime=risk_params.market_regime,
+                    target_rr_ratio=risk_params.target_rr_ratio
                 )
                 sinyal_bot = Signal.from_lorentzian(
                     hasil_prediksi, 
@@ -93,10 +114,19 @@ class BinanceWebSocket:
 
                 # Eksekusi sinyal jika terbentuk sinyal buy/sell (bukan HOLD/None)
                 if sinyal_bot is not None:
+                    # Calculate direction-specific dynamic risk parameters for order placement
+                    signal_risk_params = AdaptiveRiskCalculator.calculate_risk_params(
+                        data=df_clean,
+                        entry_price=harga_close_terakhir,
+                        direction=sinyal_bot.type,
+                        symbol=config.market.symbol
+                    )
                     self.order_manager.process_signal(
                         signal=sinyal_bot,
-                        symbol=MARKET.symbol,
-                        timestamp=current_candle_log["time_closed"]
+                        symbol=config.market.symbol,
+                        timestamp=current_candle_log["time_closed"],
+                        current_atr=Decimal(str(signal_risk_params.calculated_atr)),
+                        adaptive_risk_params=signal_risk_params
                     )
 
     def on_error(self, ws, error):
@@ -107,7 +137,7 @@ class BinanceWebSocket:
 
     def start_stream(self, symbol, interval):
         symbol_lower = symbol.lower()
-        socket = f"{WEBSOCKET.binance_ws_base_url}/{symbol_lower}@kline_{interval}"
+        socket = f"{config.websocket.binance_ws_base_url}/{symbol_lower}@kline_{interval}"
         
         while True:
             try:
@@ -120,8 +150,8 @@ class BinanceWebSocket:
                 )
                 
                 ws.run_forever(
-                    ping_interval=WEBSOCKET.ping_interval, 
-                    ping_timeout=WEBSOCKET.ping_timeout,
+                    ping_interval=config.websocket.ping_interval, 
+                    ping_timeout=config.websocket.ping_timeout,
                     sslopt={"ca_certs": certifi.where()}
                 )
                 
@@ -130,5 +160,5 @@ class BinanceWebSocket:
             except Exception as e:
                 logger.error(f"Connection exception occurred: {e}")
             
-            logger.warning(f"Connection lost. Waiting {WEBSOCKET.reconnect_delay_seconds} seconds before reconnecting...")
-            time.sleep(WEBSOCKET.reconnect_delay_seconds)
+            logger.warning(f"Connection lost. Waiting {config.websocket.reconnect_delay_seconds} seconds before reconnecting...")
+            time.sleep(config.websocket.reconnect_delay_seconds)
