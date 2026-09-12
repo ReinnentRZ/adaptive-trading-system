@@ -1,0 +1,157 @@
+{
+    "coin": "btc",
+    "timeframe": "5m",
+    "feature_columns": [
+        "rsi",
+        "cci",
+        "adx",
+        "wt_diff",
+        "atr",
+        "volatility_ratio",
+        "normalized_atr",
+        "lorentzian_signal"
+    ],
+    "target_column": "target_label",
+    "best_iteration": 45,
+    "scale_pos_weight": 2.480685696556004,
+    "roc_auc_test": 0.5531736069192965,
+    "baseline_test_win_rate_pct": 29.53195038048577,
+    "recommended_threshold": 0.6,
+    "threshold_evaluations": [
+        {
+            "threshold": 0.45,
+            "total_trades_approved": 4997,
+            "approval_rate_pct": 52.090065672886475,
+            "filtered_win_rate_pct": 32.5995597358415,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 3.0676093553557315,
+            "precision": 0.32599559735841505,
+            "recall": 0.5750088245675962,
+            "f1": 0.4160919540229885
+        },
+        {
+            "threshold": 0.5,
+            "total_trades_approved": 1392,
+            "approval_rate_pct": 14.510580631710624,
+            "filtered_win_rate_pct": 38.002873563218394,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 8.470923182732623,
+            "precision": 0.3800287356321839,
+            "recall": 0.18672785033533357,
+            "f1": 0.25041420118343194
+        },
+        {
+            "threshold": 0.55,
+            "total_trades_approved": 570,
+            "approval_rate_pct": 5.941832586260816,
+            "filtered_win_rate_pct": 38.771929824561404,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 9.239979444075633,
+            "precision": 0.387719298245614,
+            "recall": 0.07800917755030004,
+            "f1": 0.12988539523949455
+        },
+        {
+            "threshold": 0.6,
+            "total_trades_approved": 289,
+            "approval_rate_pct": 3.012613363911185,
+            "filtered_win_rate_pct": 40.13840830449827,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 10.6064579240125,
+            "precision": 0.4013840830449827,
+            "recall": 0.04094599364631133,
+            "f1": 0.07431133888532991
+        },
+        {
+            "threshold": 0.65,
+            "total_trades_approved": 95,
+            "approval_rate_pct": 0.9903054310434691,
+            "filtered_win_rate_pct": 43.15789473684211,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 13.625944356356339,
+            "precision": 0.43157894736842106,
+            "recall": 0.01447229085774797,
+            "f1": 0.028005464480874317
+        },
+        {
+            "threshold": 0.7,
+            "total_trades_approved": 2,
+            "approval_rate_pct": 0.020848535390388823,
+            "filtered_win_rate_pct": 50.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 20.46804961951423,
+            "precision": 0.5,
+            "recall": 0.00035298270384751147,
+            "f1": 0.0007054673721340388
+        }
+    ],
+    "top_features_by_gain": [
+        {
+            "feature": "normalized_atr",
+            "gain": 6606.483701807912
+        },
+        {
+            "feature": "volatility_ratio",
+            "gain": 3872.8647713037208
+        },
+        {
+            "feature": "atr",
+            "gain": 3803.7884244918823
+        },
+        {
+            "feature": "adx",
+            "gain": 3295.9287881851196
+        },
+        {
+            "feature": "rsi",
+            "gain": 2990.0539696216583
+        },
+        {
+            "feature": "cci",
+            "gain": 2837.8776195049286
+        },
+        {
+            "feature": "wt_diff",
+            "gain": 1411.3607363663614
+        },
+        {
+            "feature": "lorentzian_signal",
+            "gain": 218.46157026290894
+        }
+    ],
+    "top_features_by_split": [
+        {
+            "feature": "volatility_ratio",
+            "split": 219
+        },
+        {
+            "feature": "adx",
+            "split": 202
+        },
+        {
+            "feature": "normalized_atr",
+            "split": 190
+        },
+        {
+            "feature": "rsi",
+            "split": 171
+        },
+        {
+            "feature": "cci",
+            "split": 171
+        },
+        {
+            "feature": "atr",
+            "split": 145
+        },
+        {
+            "feature": "wt_diff",
+            "split": 110
+        },
+        {
+            "feature": "lorentzian_signal",
+            "split": 13
+        }
+    ],
+    "created_at_utc": "2026-09-12 04:54:40"
+}

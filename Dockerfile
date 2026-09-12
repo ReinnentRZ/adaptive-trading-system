@@ -32,13 +32,15 @@ RUN apt-get purge -y --auto-remove build-essential wget \
 
 # Create a non-root user and prepare workspace permissions
 RUN useradd -u 1000 -m appuser \
-    && mkdir -p /app/logs \
-    && chown -R appuser:appuser /app
+    && mkdir -p /app/logs /app/models \
+    && chown -R appuser:appuser /app \
+    && chmod -R 775 /app/logs
 
 USER appuser
 
-# Copy application source code
+# Copy application source code and trained models
 COPY --chown=appuser:appuser src/ src/
+COPY --chown=appuser:appuser models/ models/
 COPY --chown=appuser:appuser main.py .
 
 CMD ["python", "main.py"]

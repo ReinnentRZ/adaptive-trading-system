@@ -1,38 +1,31 @@
-# Byte-compiled / optimized / DLL files
+# Virtual Environment & Python Cache
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class
-*.cpython-*.pyc
-tempCodeRunnerFile.py
-src/**/tempCodeRunnerFile.py
+*.so
 
-# Virtual Environments
-.venv/
-venv/
-ENV/
-env/
-
-# Environment Variables & Secrets
+# Secrets & Environment
 .env
-.env.local
-*.key
-*.pem
+*.env.local
 
-# Runtime Logs & Telemetry Databases
-logs/*.txt
-logs/*.log
-logs/*.db
-*.sqlite
-*.sqlite3
+# Datasets & Temporary Archives
+dataset/
+/data/
+*.parquet
+*.csv
+*.zip
+*.tar.gz
+
+# Logs & State
+logs/*
 !logs/.gitkeep
 !logs/log.py
+*.log
 
-# IDE / Editor Files
+# IDE & OS
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS specific
 .DS_Store
-Thumbs.db

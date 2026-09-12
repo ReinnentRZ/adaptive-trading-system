@@ -9,6 +9,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./main.py:/app/main.py
+      - ./models:/app/models:ro
       - ./logs:/app/logs
     restart: unless-stopped
     logging:

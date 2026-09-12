@@ -1,0 +1,157 @@
+{
+    "coin": "sol",
+    "timeframe": "15m",
+    "feature_columns": [
+        "rsi",
+        "cci",
+        "adx",
+        "wt_diff",
+        "atr",
+        "volatility_ratio",
+        "normalized_atr",
+        "lorentzian_signal"
+    ],
+    "target_column": "target_label",
+    "best_iteration": 1,
+    "scale_pos_weight": 3.074940047961631,
+    "roc_auc_test": 0.5681106045397494,
+    "baseline_test_win_rate_pct": 27.647058823529413,
+    "recommended_threshold": 0.5,
+    "threshold_evaluations": [
+        {
+            "threshold": 0.45,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.5,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.55,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.6,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.65,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.7,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 27.647058823529413,
+            "win_rate_lift_pct": -27.647058823529413,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        }
+    ],
+    "top_features_by_gain": [
+        {
+            "feature": "adx",
+            "gain": 341.4816756248474
+        },
+        {
+            "feature": "normalized_atr",
+            "gain": 210.45714950561523
+        },
+        {
+            "feature": "cci",
+            "gain": 129.39759922027588
+        },
+        {
+            "feature": "rsi",
+            "gain": 100.33319664001465
+        },
+        {
+            "feature": "wt_diff",
+            "gain": 47.37859916687012
+        },
+        {
+            "feature": "lorentzian_signal",
+            "gain": 19.304399490356445
+        },
+        {
+            "feature": "atr",
+            "gain": 0.0
+        },
+        {
+            "feature": "volatility_ratio",
+            "gain": 0.0
+        }
+    ],
+    "top_features_by_split": [
+        {
+            "feature": "normalized_atr",
+            "split": 10
+        },
+        {
+            "feature": "adx",
+            "split": 8
+        },
+        {
+            "feature": "cci",
+            "split": 4
+        },
+        {
+            "feature": "rsi",
+            "split": 3
+        },
+        {
+            "feature": "wt_diff",
+            "split": 2
+        },
+        {
+            "feature": "lorentzian_signal",
+            "split": 1
+        },
+        {
+            "feature": "atr",
+            "split": 0
+        },
+        {
+            "feature": "volatility_ratio",
+            "split": 0
+        }
+    ],
+    "created_at_utc": "2026-09-12 04:54:46"
+}

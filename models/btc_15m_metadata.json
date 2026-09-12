@@ -1,0 +1,157 @@
+{
+    "coin": "btc",
+    "timeframe": "15m",
+    "feature_columns": [
+        "rsi",
+        "cci",
+        "adx",
+        "wt_diff",
+        "atr",
+        "volatility_ratio",
+        "normalized_atr",
+        "lorentzian_signal"
+    ],
+    "target_column": "target_label",
+    "best_iteration": 2,
+    "scale_pos_weight": 2.94908350305499,
+    "roc_auc_test": 0.5272927618925504,
+    "baseline_test_win_rate_pct": 28.71607938436614,
+    "recommended_threshold": 0.5,
+    "threshold_evaluations": [
+        {
+            "threshold": 0.45,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.5,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.55,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.6,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.65,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.7,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 28.71607938436614,
+            "win_rate_lift_pct": -28.71607938436614,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        }
+    ],
+    "top_features_by_gain": [
+        {
+            "feature": "atr",
+            "gain": 434.0410966873169
+        },
+        {
+            "feature": "adx",
+            "gain": 337.55241680145264
+        },
+        {
+            "feature": "normalized_atr",
+            "gain": 311.9596977233887
+        },
+        {
+            "feature": "cci",
+            "gain": 234.07307195663452
+        },
+        {
+            "feature": "rsi",
+            "gain": 198.33310723304749
+        },
+        {
+            "feature": "wt_diff",
+            "gain": 114.65741860866547
+        },
+        {
+            "feature": "lorentzian_signal",
+            "gain": 24.960100173950195
+        },
+        {
+            "feature": "volatility_ratio",
+            "gain": 0.0
+        }
+    ],
+    "top_features_by_split": [
+        {
+            "feature": "adx",
+            "split": 18
+        },
+        {
+            "feature": "cci",
+            "split": 10
+        },
+        {
+            "feature": "rsi",
+            "split": 9
+        },
+        {
+            "feature": "atr",
+            "split": 7
+        },
+        {
+            "feature": "wt_diff",
+            "split": 6
+        },
+        {
+            "feature": "normalized_atr",
+            "split": 5
+        },
+        {
+            "feature": "lorentzian_signal",
+            "split": 1
+        },
+        {
+            "feature": "volatility_ratio",
+            "split": 0
+        }
+    ],
+    "created_at_utc": "2026-09-12 04:54:41"
+}

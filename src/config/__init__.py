@@ -48,19 +48,23 @@ def _get_env_bool(key: str, default: bool) -> bool:
 
 # Simbol pasangan aset kripto yang diperdagangkan (Huruf kapital, tanpa spasi).
 # Rekomendasi: Pasangan aktif dengan likuiditas tinggi seperti "SOLUSDT" atau "BTCUSDT".
-USER_SYMBOL = _get_env_str("TRADING_SYMBOL", "SOLUSDT")
+USER_SYMBOL = _get_env_str("ACTIVE_PAIR", _get_env_str("TRADING_SYMBOL", "SOLUSDT")).upper()
 
 # Interval timeframe candle untuk analisis sinyal.
 # Pilihan Binance valid: "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w".
-USER_INTERVAL = _get_env_str("TRADING_INTERVAL", "1m")
+USER_INTERVAL = _get_env_str("ACTIVE_TIMEFRAME", _get_env_str("TRADING_INTERVAL", "1m")).lower()
 
 # Nominal alokasi dana / margin per transaksi dalam USD/USDT.
 # Rekomendasi: Mulai dari nilai minimum yang diijinkan Binance (misal 5.0 atau 10.0).
-USER_TRADE_QUANTITY_USDT = _get_env_float("TRADE_QUANTITY_USDT", 5.0)
+USER_TRADE_QUANTITY_USDT = _get_env_float("TRADE_AMOUNT", _get_env_float("TRADE_QUANTITY_USDT", 5.0))
 
 # Mode paper trading / simulasi vs akun riil (Live Trading).
-# True = Simulasi aman (menggunakan Mock Broker), False = Real money live trading.
-USER_DRY_RUN = _get_env_bool("DRY_RUN", True)
+# BOT_MODE="paper" -> dry_run=True, BOT_MODE="live" -> dry_run=False.
+_bot_mode_env = _get_env_str("BOT_MODE", "").lower()
+if _bot_mode_env:
+    USER_DRY_RUN = (_bot_mode_env != "live")
+else:
+    USER_DRY_RUN = _get_env_bool("DRY_RUN", True)
 
 # Toggle manajemen risiko dinamis berbasis ATR (Average True Range).
 # True = Level SL/TP dinamis mengikuti volatilitas pasar, False = Menggunakan fixed % profit target.
@@ -124,10 +128,10 @@ RISK_ATR_TP_MULTIPLIER = _get_env_float("RISK_ATR_TP_MULTIPLIER", 4.5)
 RISK_TAKE_PROFIT_PCT = _get_env_float("RISK_TAKE_PROFIT_PCT", 3.0)
 # Pengaman Stop Loss persen statis jika filter ATR dimatikan (default 1.0%).
 RISK_STOP_LOSS_PCT = _get_env_float("RISK_STOP_LOSS_PCT", 1.0)
-# Potongan biaya komisi per transaksi (default 0.1% untuk Binance spot).
-RISK_COMMISSION_FEE_PCT = _get_env_float("RISK_COMMISSION_FEE_PCT", 0.1)
+# Potongan biaya komisi per transaksi (default 0.075% untuk Binance spot).
+RISK_COMMISSION_FEE_PCT = _get_env_float("RISK_COMMISSION_FEE_PCT", 0.075)
 # Saldo modal awal akun simulasi / mock portofolio (default 100.0 USDT).
-RISK_INITIAL_BALANCE = _get_env_float("RISK_INITIAL_BALANCE", 100.0)
+RISK_INITIAL_BALANCE = _get_env_float("INITIAL_CAPITAL", _get_env_float("RISK_INITIAL_BALANCE", 100.0))
 
 # --- SPESIFIKASI PERIODE INDIKATOR TEKNIKAL ---
 IND_RSI_PERIOD = _get_env_int("IND_RSI_PERIOD", 14)
