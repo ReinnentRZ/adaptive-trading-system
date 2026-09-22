@@ -15,7 +15,7 @@ class TestConfiguration(unittest.TestCase):
 
     def test_market_computed_properties(self):
         # Default is SOLUSDT, 1m
-        market_cfg = config.market
+        market_cfg = MarketConfig(symbol="SOLUSDT", interval="1m")
         self.assertEqual(market_cfg.symbol_lower, "solusdt")
         self.assertEqual(market_cfg.base_asset, "SOL")
         self.assertEqual(market_cfg.quote_asset, "USDT")
@@ -66,6 +66,15 @@ class TestConfiguration(unittest.TestCase):
             StrategyConfig(confidence_threshold=-5.0)
         self.assertIn("confidence_threshold must be between 0.0 and 100.0", str(ctx.exception))
 
+        # 5. Invalid ai_threshold
+        with self.assertRaises(ValueError) as ctx:
+            StrategyConfig(ai_threshold=1.5)
+        self.assertIn("ai_threshold must be between 0.0 and 1.0", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            StrategyConfig(ai_threshold=-0.1)
+        self.assertIn("ai_threshold must be between 0.0 and 1.0", str(ctx.exception))
+
     def test_api_key_masking(self):
         from src.config import APIConfig
         api_cfg = APIConfig(api_key="1234567890abcdef", api_secret="my_super_secret_key")
@@ -77,6 +86,23 @@ class TestConfiguration(unittest.TestCase):
         
         # Verify key is masked
         self.assertIn("1234***cdef", repr_str)
+
+    def test_regime_funnel_config(self):
+        from src.config import RegimeFunnelConfig, REGIME_FUNNEL
+        self.assertIsInstance(config.regime_funnel, RegimeFunnelConfig)
+        self.assertEqual(REGIME_FUNNEL.hmm_bullish_state_id, 0)
+        self.assertEqual(REGIME_FUNNEL.state_age_max, 4)
+        self.assertEqual(REGIME_FUNNEL.ema_trend_period, 200)
+        self.assertEqual(REGIME_FUNNEL.pullback_ema_period, 9)
+        self.assertEqual(REGIME_FUNNEL.pullback_rsi_period, 14)
+        self.assertEqual(REGIME_FUNNEL.pullback_rsi_threshold, 52.0)
+        self.assertEqual(REGIME_FUNNEL.risk_sl_mult, 0.70)
+        self.assertEqual(REGIME_FUNNEL.risk_tp1_mult, 0.80)
+        self.assertEqual(REGIME_FUNNEL.risk_tp2_mult, 1.20)
+        self.assertEqual(REGIME_FUNNEL.risk_be_buffer, 1.0025)
+        self.assertEqual(REGIME_FUNNEL.trade_allocation, 30.0)
+        self.assertEqual(REGIME_FUNNEL.maker_fee, 0.0002)
+        self.assertEqual(REGIME_FUNNEL.slippage, 0.0000)
 
 
 if __name__ == "__main__":

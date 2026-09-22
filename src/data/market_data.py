@@ -4,10 +4,9 @@ def klines_to_df(all_candles_list):
 
     df = pd.DataFrame(all_candles_list)
 
-    df["id"] = df["id"].astype(str)
-    df["symbol"] = df["symbol"].astype(str)
-    df["interval"] = df["interval"].astype(str)
-    df["ignore"] = df["ignore"].astype(str)
+    for col in ["id", "symbol", "interval", "ignore"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
     
     float_columns = [
         "open", "high", "low", "close", 
@@ -27,7 +26,8 @@ def klines_to_df(all_candles_list):
         if col in df.columns:
             df[col] = df[col].astype(int)
             
-    df["is_closed"] = df["is_closed"].astype(bool)
+    if "is_closed" in df.columns:
+        df["is_closed"] = df["is_closed"].astype(bool)
     
     return df
 

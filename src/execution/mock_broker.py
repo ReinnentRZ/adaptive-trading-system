@@ -114,7 +114,9 @@ class MockBroker(Broker):
                 created_at=order.timestamp,
                 atr_at_entry=order.atr_at_entry,
                 sl_price=order.sl_price,
-                tp_price=order.tp_price
+                tp_price=order.tp_price,
+                bars_held=0,
+                max_holding_bars=getattr(TRADING, "time_barrier_bars", 12),
             )
             self.active_positions[order.symbol] = position
 
@@ -126,6 +128,18 @@ class MockBroker(Broker):
         self.cash_balance -= (trade_value + fee_amount)
 
         return trade
+
+    def increment_position_bars(self, symbol: str) -> Optional[Position]:
+        """
+        Increments the bars held counter for an active position.
+        Returns the updated Position or None if no active position exists.
+        """
+        position = self.active_positions.get(symbol)
+        if position is not None and position.status == PositionStatus.OPEN:
+            updated_pos = position.increment_bars_held()
+            self.active_positions[symbol] = updated_pos
+            return updated_pos
+        return None
 
     def close_active_position(
         self,

@@ -1,0 +1,45 @@
+{
+    "coin": "btc",
+    "timeframe": "15m",
+    "n_components": 3,
+    "feature_columns": [
+        "log_return",
+        "volatility",
+        "volume_intensity"
+    ],
+    "train_samples": 30700,
+    "total_samples": 43858,
+    "bullish_state_id": 2,
+    "bearish_state_id": 0,
+    "sideways_state_id": 1,
+    "state_profiles": [
+        {
+            "state_id": 2,
+            "mean_return_pct": 0.25570686704029916,
+            "mean_volatility_pct": 0.3761343213830869,
+            "mean_volume_zscore": 1.4708229204276368,
+            "candle_count": 5711,
+            "distribution_pct": 13.021569611017375,
+            "interpretation": "Bullish Trending (Momentum Expansion)"
+        },
+        {
+            "state_id": 1,
+            "mean_return_pct": -0.0002824271999828351,
+            "mean_volatility_pct": 0.24474776932247852,
+            "mean_volume_zscore": -0.38666368141788016,
+            "candle_count": 33154,
+            "distribution_pct": 75.59396233298372,
+            "interpretation": "Low-Volatility Sideways (Consolidation)"
+        },
+        {
+            "state_id": 0,
+            "mean_return_pct": -0.2962419396198323,
+            "mean_volatility_pct": 0.42856186310960936,
+            "mean_volume_zscore": 1.198207271688492,
+            "candle_count": 4993,
+            "distribution_pct": 11.384468055998905,
+            "interpretation": "High-Volatility Breakdown (Bearish Panic)"
+        }
+    ],
+    "created_at_utc": "2026-09-21 11:13:29"
+}

@@ -9,6 +9,9 @@ from src.execution.mock_broker import MockBroker
 from src.execution.order_manager import OrderManager
 
 
+from src.strategies.risk_engine import AdaptiveRiskParams
+
+
 class TestRiskManagement(unittest.TestCase):
     def setUp(self):
         self.broker = MockBroker()
@@ -28,12 +31,23 @@ class TestRiskManagement(unittest.TestCase):
             raw_vote=6
         )
         current_atr = Decimal("2.00")
+        custom_risk = AdaptiveRiskParams(
+            calculated_atr=2.0,
+            applied_period=14,
+            market_regime="Trending",
+            sl_multiplier=1.5,
+            tp_multiplier=4.5,
+            target_rr_ratio=3.0,
+            sl_price=97.00,
+            tp_price=109.00,
+        )
         
         order = self.order_manager.process_signal(
             signal=signal,
             symbol=self.symbol,
             timestamp=1629000000.0,
-            current_atr=current_atr
+            current_atr=current_atr,
+            adaptive_risk_params=custom_risk,
         )
         
         # Verify order attributes
@@ -64,12 +78,23 @@ class TestRiskManagement(unittest.TestCase):
             raw_vote=-6
         )
         current_atr = Decimal("2.00")
+        custom_risk = AdaptiveRiskParams(
+            calculated_atr=2.0,
+            applied_period=14,
+            market_regime="Trending",
+            sl_multiplier=1.5,
+            tp_multiplier=4.5,
+            target_rr_ratio=3.0,
+            sl_price=103.00,
+            tp_price=91.00,
+        )
         
         order = self.order_manager.process_signal(
             signal=signal,
             symbol=self.symbol,
             timestamp=1629000000.0,
-            current_atr=current_atr
+            current_atr=current_atr,
+            adaptive_risk_params=custom_risk,
         )
         
         # Verify order attributes
@@ -95,12 +120,23 @@ class TestRiskManagement(unittest.TestCase):
             raw_vote=6
         )
         current_atr = Decimal("2.00")
+        custom_risk = AdaptiveRiskParams(
+            calculated_atr=2.0,
+            applied_period=14,
+            market_regime="Trending",
+            sl_multiplier=1.5,
+            tp_multiplier=4.5,
+            target_rr_ratio=3.0,
+            sl_price=97.00,
+            tp_price=109.00,
+        )
         
         self.order_manager.process_signal(
             signal=signal,
             symbol=self.symbol,
             timestamp=1629000000.0,
-            current_atr=current_atr
+            current_atr=current_atr,
+            adaptive_risk_params=custom_risk,
         )
         
         # Price goes down below SL (97.00)
@@ -120,12 +156,23 @@ class TestRiskManagement(unittest.TestCase):
             raw_vote=6
         )
         current_atr = Decimal("2.00")
+        custom_risk = AdaptiveRiskParams(
+            calculated_atr=2.0,
+            applied_period=14,
+            market_regime="Trending",
+            sl_multiplier=1.5,
+            tp_multiplier=4.5,
+            target_rr_ratio=3.0,
+            sl_price=97.00,
+            tp_price=109.00,
+        )
         
         self.order_manager.process_signal(
             signal=signal,
             symbol=self.symbol,
             timestamp=1629000000.0,
-            current_atr=current_atr
+            current_atr=current_atr,
+            adaptive_risk_params=custom_risk,
         )
         
         # Price goes up above TP (109.00)

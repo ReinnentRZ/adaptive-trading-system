@@ -16,8 +16,283 @@
     "scale_pos_weight": 2.480685696556004,
     "roc_auc_test": 0.5531736069192965,
     "baseline_test_win_rate_pct": 29.53195038048577,
-    "recommended_threshold": 0.6,
+    "recommended_threshold": 0.44,
     "threshold_evaluations": [
+        {
+            "threshold": 0.2,
+            "total_trades_approved": 9593,
+            "approval_rate_pct": 100.0,
+            "filtered_win_rate_pct": 29.53195038048577,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.0,
+            "precision": 0.2953195038048577,
+            "recall": 1.0,
+            "f1": 0.4559793980363753
+        },
+        {
+            "threshold": 0.21,
+            "total_trades_approved": 9593,
+            "approval_rate_pct": 100.0,
+            "filtered_win_rate_pct": 29.53195038048577,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.0,
+            "precision": 0.2953195038048577,
+            "recall": 1.0,
+            "f1": 0.4559793980363753
+        },
+        {
+            "threshold": 0.22,
+            "total_trades_approved": 9593,
+            "approval_rate_pct": 100.0,
+            "filtered_win_rate_pct": 29.53195038048577,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.0,
+            "precision": 0.2953195038048577,
+            "recall": 1.0,
+            "f1": 0.4559793980363753
+        },
+        {
+            "threshold": 0.23,
+            "total_trades_approved": 9593,
+            "approval_rate_pct": 100.0,
+            "filtered_win_rate_pct": 29.53195038048577,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.0,
+            "precision": 0.2953195038048577,
+            "recall": 1.0,
+            "f1": 0.4559793980363753
+        },
+        {
+            "threshold": 0.24,
+            "total_trades_approved": 9592,
+            "approval_rate_pct": 99.9895757323048,
+            "filtered_win_rate_pct": 29.535029190992496,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.0030788105067252047,
+            "precision": 0.29535029190992496,
+            "recall": 1.0,
+            "f1": 0.45601609657947684
+        },
+        {
+            "threshold": 0.25,
+            "total_trades_approved": 9591,
+            "approval_rate_pct": 99.9791514646096,
+            "filtered_win_rate_pct": 29.538108643519966,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.006158263034194533,
+            "precision": 0.29538108643519967,
+            "recall": 1.0,
+            "f1": 0.456052801030264
+        },
+        {
+            "threshold": 0.26,
+            "total_trades_approved": 9590,
+            "approval_rate_pct": 99.96872719691441,
+            "filtered_win_rate_pct": 29.54118873826903,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.009238357783260653,
+            "precision": 0.2954118873826903,
+            "recall": 1.0,
+            "f1": 0.4560895113901634
+        },
+        {
+            "threshold": 0.27,
+            "total_trades_approved": 9584,
+            "approval_rate_pct": 99.90618159074324,
+            "filtered_win_rate_pct": 29.55968280467446,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.027732424188688043,
+            "precision": 0.2955968280467446,
+            "recall": 1.0,
+            "f1": 0.45630989772086655
+        },
+        {
+            "threshold": 0.28,
+            "total_trades_approved": 9582,
+            "approval_rate_pct": 99.88533305535286,
+            "filtered_win_rate_pct": 29.565852640367357,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.033902259881585906,
+            "precision": 0.29565852640367357,
+            "recall": 1.0,
+            "f1": 0.4563834071687475
+        },
+        {
+            "threshold": 0.29,
+            "total_trades_approved": 9581,
+            "approval_rate_pct": 99.87490878765767,
+            "filtered_win_rate_pct": 29.5689385241624,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.036988143676630614,
+            "precision": 0.295689385241624,
+            "recall": 1.0,
+            "f1": 0.4564201707749315
+        },
+        {
+            "threshold": 0.3,
+            "total_trades_approved": 9577,
+            "approval_rate_pct": 99.83321171687689,
+            "filtered_win_rate_pct": 29.57084682050747,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.03889644002169845,
+            "precision": 0.2957084682050747,
+            "recall": 0.9996470172961525,
+            "f1": 0.45640612409347303
+        },
+        {
+            "threshold": 0.31,
+            "total_trades_approved": 9576,
+            "approval_rate_pct": 99.82278744918169,
+            "filtered_win_rate_pct": 29.57393483709273,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.04198445660695782,
+            "precision": 0.2957393483709273,
+            "recall": 0.9996470172961525,
+            "f1": 0.45644290434362156
+        },
+        {
+            "threshold": 0.32,
+            "total_trades_approved": 9572,
+            "approval_rate_pct": 99.78109037840092,
+            "filtered_win_rate_pct": 29.57584621813623,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.04389583765046012,
+            "precision": 0.2957584621813623,
+            "recall": 0.9992940345923049,
+            "f1": 0.4564288593309149
+        },
+        {
+            "threshold": 0.33,
+            "total_trades_approved": 9567,
+            "approval_rate_pct": 99.72896903992495,
+            "filtered_win_rate_pct": 29.5808508414341,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.04890046094832812,
+            "precision": 0.295808508414341,
+            "recall": 0.9989410518884575,
+            "f1": 0.45645161290322583
+        },
+        {
+            "threshold": 0.34,
+            "total_trades_approved": 9562,
+            "approval_rate_pct": 99.67684770144898,
+            "filtered_win_rate_pct": 29.58586069859862,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.05391031811284819,
+            "precision": 0.2958586069859862,
+            "recall": 0.99858806918461,
+            "f1": 0.4564743848325938
+        },
+        {
+            "threshold": 0.35,
+            "total_trades_approved": 9554,
+            "approval_rate_pct": 99.59345355988741,
+            "filtered_win_rate_pct": 29.568767008582792,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.036816628097021464,
+            "precision": 0.2956876700858279,
+            "recall": 0.9971761383692199,
+            "f1": 0.4561233551303786
+        },
+        {
+            "threshold": 0.36,
+            "total_trades_approved": 9543,
+            "approval_rate_pct": 99.47878661524028,
+            "filtered_win_rate_pct": 29.602850256732683,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.07089987624691219,
+            "precision": 0.2960285025673268,
+            "recall": 0.9971761383692199,
+            "f1": 0.45652876535229475
+        },
+        {
+            "threshold": 0.37,
+            "total_trades_approved": 9530,
+            "approval_rate_pct": 99.34327113520276,
+            "filtered_win_rate_pct": 29.62224554039874,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.09029515991296932,
+            "precision": 0.2962224554039874,
+            "recall": 0.9964701729615248,
+            "f1": 0.45668527056539676
+        },
+        {
+            "threshold": 0.38,
+            "total_trades_approved": 9491,
+            "approval_rate_pct": 98.93672469509018,
+            "filtered_win_rate_pct": 29.712359077020334,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.18040869653456326,
+            "precision": 0.29712359077020334,
+            "recall": 0.9954112248499823,
+            "f1": 0.45764362220058424
+        },
+        {
+            "threshold": 0.39,
+            "total_trades_approved": 9448,
+            "approval_rate_pct": 98.48848118419681,
+            "filtered_win_rate_pct": 29.709991532599496,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.17804115211372462,
+            "precision": 0.29709991532599495,
+            "recall": 0.9908224496999647,
+            "f1": 0.4571288982981842
+        },
+        {
+            "threshold": 0.4,
+            "total_trades_approved": 9386,
+            "approval_rate_pct": 97.84217658709476,
+            "filtered_win_rate_pct": 29.75708502024291,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.22513463975714032,
+            "precision": 0.2975708502024291,
+            "recall": 0.9858806918460995,
+            "f1": 0.457156886815615
+        },
+        {
+            "threshold": 0.41,
+            "total_trades_approved": 9154,
+            "approval_rate_pct": 95.42374648180966,
+            "filtered_win_rate_pct": 29.833952370548396,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.3020019900626245,
+            "precision": 0.29833952370548394,
+            "recall": 0.9639957642075538,
+            "f1": 0.4556602986568783
+        },
+        {
+            "threshold": 0.42,
+            "total_trades_approved": 8206,
+            "approval_rate_pct": 85.54154070676535,
+            "filtered_win_rate_pct": 30.25834755057275,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 0.7263971700869796,
+            "precision": 0.3025834755057275,
+            "recall": 0.876456053653371,
+            "f1": 0.4498595887308633
+        },
+        {
+            "threshold": 0.43,
+            "total_trades_approved": 6868,
+            "approval_rate_pct": 71.59387053059523,
+            "filtered_win_rate_pct": 30.955154338963307,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 1.4232039584775364,
+            "precision": 0.3095515433896331,
+            "recall": 0.7504412283798094,
+            "f1": 0.43830532934748995
+        },
+        {
+            "threshold": 0.44,
+            "total_trades_approved": 5820,
+            "approval_rate_pct": 60.669237986031476,
+            "filtered_win_rate_pct": 31.804123711340203,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 2.2721733308544323,
+            "precision": 0.31804123711340204,
+            "recall": 0.6533709848217437,
+            "f1": 0.427828498786548
+        },
         {
             "threshold": 0.45,
             "total_trades_approved": 4997,
@@ -28,6 +303,50 @@
             "precision": 0.32599559735841505,
             "recall": 0.5750088245675962,
             "f1": 0.4160919540229885
+        },
+        {
+            "threshold": 0.46,
+            "total_trades_approved": 4174,
+            "approval_rate_pct": 43.51089335974147,
+            "filtered_win_rate_pct": 33.42117872544322,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 3.8892283449574485,
+            "precision": 0.3342117872544322,
+            "recall": 0.4924108718672785,
+            "f1": 0.3981732553161125
+        },
+        {
+            "threshold": 0.47,
+            "total_trades_approved": 3372,
+            "approval_rate_pct": 35.15063066819556,
+            "filtered_win_rate_pct": 34.25266903914591,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 4.720718658660136,
+            "precision": 0.34252669039145905,
+            "recall": 0.4076950229438758,
+            "f1": 0.3722804190169218
+        },
+        {
+            "threshold": 0.48,
+            "total_trades_approved": 2623,
+            "approval_rate_pct": 27.342854164494945,
+            "filtered_win_rate_pct": 35.379336637438044,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 5.847386256952273,
+            "precision": 0.35379336637438047,
+            "recall": 0.32756794917049065,
+            "f1": 0.34017595307917886
+        },
+        {
+            "threshold": 0.49,
+            "total_trades_approved": 1929,
+            "approval_rate_pct": 20.10841238403002,
+            "filtered_win_rate_pct": 36.44375324002074,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 6.911802859534969,
+            "precision": 0.3644375324002074,
+            "recall": 0.24814684080480057,
+            "f1": 0.2952540949181016
         },
         {
             "threshold": 0.5,
@@ -41,6 +360,50 @@
             "f1": 0.25041420118343194
         },
         {
+            "threshold": 0.51,
+            "total_trades_approved": 1137,
+            "approval_rate_pct": 11.852392369436048,
+            "filtered_win_rate_pct": 37.46701846965699,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 7.935068089171221,
+            "precision": 0.37467018469656993,
+            "recall": 0.1503706318390399,
+            "f1": 0.2146095717884131
+        },
+        {
+            "threshold": 0.52,
+            "total_trades_approved": 934,
+            "approval_rate_pct": 9.736266027311581,
+            "filtered_win_rate_pct": 37.3661670235546,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 7.834216643068832,
+            "precision": 0.37366167023554603,
+            "recall": 0.12319096364278151,
+            "f1": 0.1852933368728431
+        },
+        {
+            "threshold": 0.53,
+            "total_trades_approved": 786,
+            "approval_rate_pct": 8.193474408422809,
+            "filtered_win_rate_pct": 37.150127226463106,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 7.6181768459773345,
+            "precision": 0.37150127226463103,
+            "recall": 0.10307094952347334,
+            "f1": 0.16137054434926776
+        },
+        {
+            "threshold": 0.54,
+            "total_trades_approved": 661,
+            "approval_rate_pct": 6.8904409465235075,
+            "filtered_win_rate_pct": 37.97276853252647,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 8.440818152040702,
+            "precision": 0.37972768532526474,
+            "recall": 0.08859865866572537,
+            "f1": 0.14367487120778477
+        },
+        {
             "threshold": 0.55,
             "total_trades_approved": 570,
             "approval_rate_pct": 5.941832586260816,
@@ -50,6 +413,50 @@
             "precision": 0.387719298245614,
             "recall": 0.07800917755030004,
             "f1": 0.12988539523949455
+        },
+        {
+            "threshold": 0.56,
+            "total_trades_approved": 490,
+            "approval_rate_pct": 5.107891170645262,
+            "filtered_win_rate_pct": 38.775510204081634,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 9.243559823595863,
+            "precision": 0.3877551020408163,
+            "recall": 0.06706671373102718,
+            "f1": 0.11435449894673488
+        },
+        {
+            "threshold": 0.57,
+            "total_trades_approved": 419,
+            "approval_rate_pct": 4.367768164286459,
+            "filtered_win_rate_pct": 38.18615751789976,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 8.654207137413987,
+            "precision": 0.3818615751789976,
+            "recall": 0.056477232615601836,
+            "f1": 0.0984009840098401
+        },
+        {
+            "threshold": 0.58,
+            "total_trades_approved": 369,
+            "approval_rate_pct": 3.846554779526738,
+            "filtered_win_rate_pct": 39.56639566395664,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 10.03444528347087,
+            "precision": 0.3956639566395664,
+            "recall": 0.05153547476173667,
+            "f1": 0.09119300437226734
+        },
+        {
+            "threshold": 0.59,
+            "total_trades_approved": 333,
+            "approval_rate_pct": 3.4712811424997394,
+            "filtered_win_rate_pct": 40.54054054054054,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 11.00859016005477,
+            "precision": 0.40540540540540543,
+            "recall": 0.04765266501941405,
+            "f1": 0.08528111181301326
         },
         {
             "threshold": 0.6,
@@ -63,6 +470,50 @@
             "f1": 0.07431133888532991
         },
         {
+            "threshold": 0.61,
+            "total_trades_approved": 244,
+            "approval_rate_pct": 2.543521317627437,
+            "filtered_win_rate_pct": 40.16393442622951,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 10.631984045743739,
+            "precision": 0.4016393442622951,
+            "recall": 0.03459230497705612,
+            "f1": 0.0636984075398115
+        },
+        {
+            "threshold": 0.62,
+            "total_trades_approved": 199,
+            "approval_rate_pct": 2.074429271343688,
+            "filtered_win_rate_pct": 39.19597989949749,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 9.664029519011716,
+            "precision": 0.39195979899497485,
+            "recall": 0.027532650900105895,
+            "f1": 0.051451187335092345
+        },
+        {
+            "threshold": 0.63,
+            "total_trades_approved": 164,
+            "approval_rate_pct": 1.7095799020118836,
+            "filtered_win_rate_pct": 42.073170731707314,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 12.541220351221543,
+            "precision": 0.42073170731707316,
+            "recall": 0.02435580656547829,
+            "f1": 0.04604604604604605
+        },
+        {
+            "threshold": 0.64,
+            "total_trades_approved": 131,
+            "approval_rate_pct": 1.365579068070468,
+            "filtered_win_rate_pct": 38.93129770992366,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 9.39934732943789,
+            "precision": 0.3893129770992366,
+            "recall": 0.018002117896223083,
+            "f1": 0.03441295546558704
+        },
+        {
             "threshold": 0.65,
             "total_trades_approved": 95,
             "approval_rate_pct": 0.9903054310434691,
@@ -74,6 +525,50 @@
             "f1": 0.028005464480874317
         },
         {
+            "threshold": 0.66,
+            "total_trades_approved": 75,
+            "approval_rate_pct": 0.7818200771395809,
+            "filtered_win_rate_pct": 49.333333333333336,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 19.801382952847565,
+            "precision": 0.49333333333333335,
+            "recall": 0.013060360042357924,
+            "f1": 0.02544704264099037
+        },
+        {
+            "threshold": 0.67,
+            "total_trades_approved": 51,
+            "approval_rate_pct": 0.531637652454915,
+            "filtered_win_rate_pct": 52.94117647058824,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 23.409226090102468,
+            "precision": 0.5294117647058824,
+            "recall": 0.00953053300388281,
+            "f1": 0.01872399445214979
+        },
+        {
+            "threshold": 0.68,
+            "total_trades_approved": 23,
+            "approval_rate_pct": 0.2397581569894715,
+            "filtered_win_rate_pct": 78.26086956521739,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 48.72891918473162,
+            "precision": 0.782608695652174,
+            "recall": 0.0063536886692552065,
+            "f1": 0.012605042016806723
+        },
+        {
+            "threshold": 0.69,
+            "total_trades_approved": 9,
+            "approval_rate_pct": 0.09381840925674972,
+            "filtered_win_rate_pct": 66.66666666666666,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": 37.13471628618089,
+            "precision": 0.6666666666666666,
+            "recall": 0.002117896223085069,
+            "f1": 0.00422237860661506
+        },
+        {
             "threshold": 0.7,
             "total_trades_approved": 2,
             "approval_rate_pct": 0.020848535390388823,
@@ -83,6 +578,160 @@
             "precision": 0.5,
             "recall": 0.00035298270384751147,
             "f1": 0.0007054673721340388
+        },
+        {
+            "threshold": 0.71,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.72,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.73,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.74,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.75,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.76,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.77,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.78,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.79,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.8,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.81,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.82,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.83,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        {
+            "threshold": 0.84,
+            "total_trades_approved": 0,
+            "approval_rate_pct": 0.0,
+            "filtered_win_rate_pct": 0.0,
+            "baseline_win_rate_pct": 29.53195038048577,
+            "win_rate_lift_pct": -29.53195038048577,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
         }
     ],
     "top_features_by_gain": [
@@ -153,5 +802,5 @@
             "split": 13
         }
     ],
-    "created_at_utc": "2026-09-12 04:54:40"
+    "created_at_utc": "2026-09-12 07:49:52"
 }

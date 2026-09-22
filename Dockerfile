@@ -1,15 +1,20 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
 
-# Install build dependencies, curl, ca-certificates, compile TA-Lib C-library, and update CA certificates
+# Install build dependencies, curl, ca-certificates, libgomp1, compile TA-Lib C-library
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gcc \
+    g++ \
+    make \
     wget \
     ca-certificates \
     curl \
+    libgomp1 \
     && update-ca-certificates \
     && wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp \
@@ -17,7 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ./configure --prefix=/usr \
     && make \
     && make install \
-    && rm -rf /tmp/*
+    && rm -rf /tmp/* \
+    && ldconfig \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -26,21 +33,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Remove compilation build tools (KEEP ca-certificates and curl for runtime connection stability)
-RUN apt-get purge -y --auto-remove build-essential wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user and prepare workspace permissions
+# Create a non-root user and prepare workspace directories
 RUN useradd -u 1000 -m appuser \
-    && mkdir -p /app/logs /app/models \
+    && mkdir -p /app/data /app/logs /app/models \
     && chown -R appuser:appuser /app \
-    && chmod -R 775 /app/logs
+    && chmod -R 775 /app/data /app/logs
 
 USER appuser
 
-# Copy application source code and trained models
+# Copy application source code and models
 COPY --chown=appuser:appuser src/ src/
 COPY --chown=appuser:appuser models/ models/
-COPY --chown=appuser:appuser main.py .
 
-CMD ["python", "main.py"]
+ENTRYPOINT ["python3", "src/execution/live_bot.py"]

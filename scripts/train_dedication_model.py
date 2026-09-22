@@ -163,6 +163,8 @@ class DedicationModelTrainer:
             / f"{self.coin}_{self.timeframe}_features.parquet"
         )
         if not file_path.exists():
+            file_path = self.input_dir / f"{self.coin}_{self.timeframe}_features.parquet"
+        if not file_path.exists():
             raise FileNotFoundError(f"Feature dataset not found at: {file_path}")
 
         df = pd.read_parquet(file_path)
@@ -257,8 +259,8 @@ class DedicationModelTrainer:
             f"Out-of-Sample ROC-AUC: {roc_auc:.4f} | Baseline Win Rate: {baseline_test_win_rate:.2f}%"
         )
 
-        # Probability Decision Threshold Tuning
-        thresholds = [0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
+        # Probability Decision Threshold Tuning across full spectrum (0.01 step resolution)
+        thresholds = [round(float(x), 3) for x in np.arange(0.20, 0.85, 0.01)]
         threshold_results: List[ThresholdEvaluation] = []
 
         for th in thresholds:
@@ -315,13 +317,16 @@ class DedicationModelTrainer:
 
         joblib.dump(model, model_path)
 
-        # Recommended threshold: threshold with highest win rate lift having >= 2% approval
-        valid_candidates = [r for r in threshold_results if r.approval_rate_pct >= 2.0]
-        rec_threshold = (
-            max(valid_candidates, key=lambda x: x.filtered_win_rate_pct).threshold
-            if valid_candidates
-            else 0.50
-        )
+        # Candidate selection: require at least 15 approved trades and prioritize highest filtered win rate / precision
+        valid_candidates = [
+            r for r in threshold_results if r.total_trades_approved >= 15 and r.filtered_win_rate_pct > baseline_test_win_rate
+        ]
+        if valid_candidates:
+            # Pick candidate with highest filtered win rate and win rate lift
+            rec_threshold = max(valid_candidates, key=lambda x: (x.filtered_win_rate_pct, x.win_rate_lift_pct, x.precision)).threshold
+        else:
+            active_cands = [r for r in threshold_results if r.total_trades_approved >= 15]
+            rec_threshold = max(active_cands, key=lambda x: (x.filtered_win_rate_pct, x.f1)).threshold if active_cands else 0.50
 
         metadata: Dict[str, Any] = {
             "coin": self.coin,

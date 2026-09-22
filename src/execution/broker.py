@@ -53,3 +53,12 @@ class Broker(ABC):
         Retrieves trading statistics (Total Trades, Win Rate, PnL, etc.).
         """
         pass
+
+    @abstractmethod
+    def increment_position_bars(self, symbol: str) -> Optional[Position]:
+        """
+        Increments the bars held counter for an active position.
+        Returns the updated Position or None if no active position exists.
+        """
+        pass
+

@@ -8,6 +8,7 @@ from src.core.signal import Signal
 from src.config.trading import TRADING
 from src.config.strategy import STRATEGY
 from src.models.order import Order
+from src.models.trade import Trade
 from src.execution.broker import Broker
 from src.strategies.risk_engine import AdaptiveRiskParams
 
@@ -151,6 +152,24 @@ class OrderManager:
                     f"Price: {current_price:.2f} | PnL: {pnl_pct:.2f}%"
                 )
                 self.broker.close_active_position(symbol, exit_price=current_price, timestamp=timestamp)
+
+    def on_candle_close(self, symbol: str, close_price: float, timestamp: float) -> Optional[Trade]:
+        """
+        Processes candle close event for active position monitoring.
+        Increments the holding candle count and triggers time barrier market exit if expired.
+        """
+        pos = self.broker.increment_position_bars(symbol)
+        if pos is not None and pos.check_time_barrier():
+            logger.warning(
+                f"[OrderManager] Time Barrier expired ({pos.bars_held} >= {pos.max_holding_bars} bars) "
+                f"for {symbol} | Closing position at market price: {close_price:.2f}"
+            )
+            return self.broker.close_active_position(
+                symbol=symbol,
+                exit_price=close_price,
+                timestamp=timestamp
+            )
+        return None
 
     def _create_and_execute_order(
         self,

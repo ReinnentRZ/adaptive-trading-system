@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
+from src.config.strategy import RegimeFunnelConfig
+
 
 # ==============================================================================
 # ENVIRONMENT VARIABLE HELPERS
@@ -47,12 +49,12 @@ def _get_env_bool(key: str, default: bool) -> bool:
 # Pengaturan dasar trading yang sering disesuaikan oleh pengguna.
 
 # Simbol pasangan aset kripto yang diperdagangkan (Huruf kapital, tanpa spasi).
-# Rekomendasi: Pasangan aktif dengan likuiditas tinggi seperti "SOLUSDT" atau "BTCUSDT".
-USER_SYMBOL = _get_env_str("ACTIVE_PAIR", _get_env_str("TRADING_SYMBOL", "SOLUSDT")).upper()
+# Rekomendasi: Pasangan aktif dengan likuiditas tinggi seperti "BTCUSDT" atau "SOLUSDT".
+USER_SYMBOL = _get_env_str("ACTIVE_PAIR", _get_env_str("TRADING_SYMBOL", "BTCUSDT")).upper()
 
 # Interval timeframe candle untuk analisis sinyal.
 # Pilihan Binance valid: "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w".
-USER_INTERVAL = _get_env_str("ACTIVE_TIMEFRAME", _get_env_str("TRADING_INTERVAL", "1m")).lower()
+USER_INTERVAL = _get_env_str("ACTIVE_TIMEFRAME", _get_env_str("TRADING_INTERVAL", "5m")).lower()
 
 # Nominal alokasi dana / margin per transaksi dalam USD/USDT.
 # Rekomendasi: Mulai dari nilai minimum yang diijinkan Binance (misal 5.0 atau 10.0).
@@ -77,6 +79,8 @@ USER_USE_ATR_RISK_MANAGEMENT = _get_env_bool("USE_ATR_RISK_MANAGEMENT", True)
 # Konfigurasi kuantitatif tingkat lanjut, ML model, dan parameter jaringan.
 
 # --- MODEL ML & LORENTZIAN CLASSIFICATION ---
+# Batas ambang probabilitas klasifikasi Meta-Labeling LightGBM (default 0.44 untuk BTC 5m)
+QUANT_AI_THRESHOLD = _get_env_float("AI_THRESHOLD", 0.44)
 # Batas persentase keyakinan sinyal sebelum eksekusi (50.0 - 100.0, default 70.0).
 QUANT_CONFIDENCE_THRESHOLD = _get_env_float("ML_CONFIDENCE_THRESHOLD", 70.0)
 # Jumlah tetangga terdekat dalam pencarian Lorentzian classifier (k) (3 - 25, default 8).
@@ -120,10 +124,12 @@ QUANT_KERNEL_LAG = _get_env_int("ML_KERNEL_LAG", 2)
 # --- PROTEKSI RISIKO & MANAJEMEN PORTOFOLIO ---
 # Periode perhitungan Average True Range (default 14).
 RISK_ATR_PERIOD = _get_env_int("RISK_ATR_PERIOD", 14)
-# Jarak pengaman Stop Loss dinamis (multiplied by ATR) (1.0 - 3.0, default 1.5).
-RISK_ATR_SL_MULTIPLIER = _get_env_float("RISK_ATR_SL_MULTIPLIER", 1.5)
-# Jarak target profit dinamis (multiplied by ATR) (2.0 - 6.0, default 4.5).
-RISK_ATR_TP_MULTIPLIER = _get_env_float("RISK_ATR_TP_MULTIPLIER", 4.5)
+# Jarak pengaman Stop Loss dinamis (multiplied by ATR) (default 1.0).
+RISK_ATR_SL_MULTIPLIER = _get_env_float("RISK_ATR_SL_MULTIPLIER", 1.0)
+# Jarak target profit dinamis (multiplied by ATR) (default 2.0).
+RISK_ATR_TP_MULTIPLIER = _get_env_float("RISK_ATR_TP_MULTIPLIER", 2.0)
+# Time barrier batas maksimum holding candle (default 12 candle).
+RISK_TIME_BARRIER_BARS = _get_env_int("TIME_BARRIER_BARS", 12)
 # Target Take Profit persen statis jika filter ATR dimatikan (default 3.0%).
 RISK_TAKE_PROFIT_PCT = _get_env_float("RISK_TAKE_PROFIT_PCT", 3.0)
 # Pengaman Stop Loss persen statis jika filter ATR dimatikan (default 1.0%).
@@ -207,6 +213,7 @@ class TradingConfig:
     atr_period: int = RISK_ATR_PERIOD
     atr_sl_multiplier: float = RISK_ATR_SL_MULTIPLIER
     atr_tp_multiplier: float = RISK_ATR_TP_MULTIPLIER
+    time_barrier_bars: int = RISK_TIME_BARRIER_BARS
     use_atr_risk_management: bool = USER_USE_ATR_RISK_MANAGEMENT
     dry_run: bool = USER_DRY_RUN
 
@@ -259,10 +266,12 @@ class APIConfig:
 
 @dataclass(frozen=True)
 class StrategyConfig:
+    ai_threshold: float = QUANT_AI_THRESHOLD
     confidence_threshold: float = QUANT_CONFIDENCE_THRESHOLD
     neighbors_count: int = QUANT_NEIGHBORS_COUNT
     max_bars_back: int = QUANT_MAX_BARS_BACK
     label_horizon: int = QUANT_LABEL_HORIZON
+    time_barrier_bars: int = RISK_TIME_BARRIER_BARS
     
     use_volatility_filter: bool = QUANT_USE_VOLATILITY_FILTER
     volatility_min_length: int = QUANT_VOLATILITY_MIN_LENGTH
@@ -293,6 +302,10 @@ class StrategyConfig:
             raise ValueError(
                 f"confidence_threshold must be between 0.0 and 100.0, got {self.confidence_threshold}"
             )
+        if not (0.0 <= self.ai_threshold <= 1.0):
+            raise ValueError(
+                f"ai_threshold must be between 0.0 and 1.0, got {self.ai_threshold}"
+            )
 
 
 @dataclass(frozen=True)
@@ -312,6 +325,7 @@ class AppConfig:
     api: APIConfig = field(default_factory=APIConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     websocket: WebSocketConfig = field(default_factory=WebSocketConfig)
+    regime_funnel: RegimeFunnelConfig = field(default_factory=RegimeFunnelConfig)
 
     def __repr__(self) -> str:
         return (
@@ -322,7 +336,8 @@ class AppConfig:
             f"  logging={self.logging},\n"
             f"  api={self.api},\n"
             f"  strategy={self.strategy},\n"
-            f"  websocket={self.websocket}\n"
+            f"  websocket={self.websocket},\n"
+            f"  regime_funnel={self.regime_funnel}\n"
             f")"
         )
 
@@ -340,5 +355,30 @@ INDICATORS = config.indicators
 LOGGING = config.logging
 WEBSOCKET = config.websocket
 STRATEGY = config.strategy
+REGIME_FUNNEL = config.regime_funnel
 API_KEY = config.api.api_key
 API_SECRET = config.api.api_secret
+AI_THRESHOLD = config.strategy.ai_threshold
+
+__all__ = [
+    "config",
+    "AppConfig",
+    "MarketConfig",
+    "TradingConfig",
+    "IndicatorConfig",
+    "LoggingConfig",
+    "APIConfig",
+    "StrategyConfig",
+    "WebSocketConfig",
+    "RegimeFunnelConfig",
+    "MARKET",
+    "TRADING",
+    "INDICATORS",
+    "LOGGING",
+    "WEBSOCKET",
+    "STRATEGY",
+    "REGIME_FUNNEL",
+    "API_KEY",
+    "API_SECRET",
+    "AI_THRESHOLD",
+]

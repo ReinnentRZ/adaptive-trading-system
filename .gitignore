@@ -1,31 +1,51 @@
-# Virtual Environment & Python Cache
+# ==============================================================================
+# GITIGNORE - ADAPTIVE TRADING SYSTEM
+# ==============================================================================
+
+# Virtual Environments & Python Cache
 .venv/
 venv/
 env/
+ENV/
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+*.egg-info/
 
-# Secrets & Environment
+# Secrets, API Keys & Local Environment
 .env
+.env.*
+!.env.example
 *.env.local
 
-# Datasets & Temporary Archives
+# Live Bot State & Private Trading Data (Strictly Local)
+data/
+*.db
+*.sqlite
+
+# Datasets & Raw Market Data
 dataset/
-/data/
 *.parquet
 *.csv
 *.zip
 *.tar.gz
 
-# Logs & State
+# Runtime Logs
 logs/*
 !logs/.gitkeep
 !logs/log.py
 *.log
 
-# IDE & OS
+# IDE & Operating System Artifacts
 .vscode/
 .idea/
 .DS_Store
+*.swp
+*.suo

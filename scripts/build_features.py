@@ -304,9 +304,9 @@ class FeaturePipeline:
         input_dir: Path,
         output_dir: Path,
         timeframes: Sequence[str] = ("5m", "15m", "30m"),
-        horizon: int = 8,
-        tp_multiplier: float = 4.5,
-        sl_multiplier: float = 1.5,
+        horizon: int = 12,
+        tp_multiplier: float = 2.0,
+        sl_multiplier: float = 1.0,
         lorentzian_k: int = 8,
         lorentzian_max_bars: int = 2000,
         lorentzian_label_horizon: int = 4,
@@ -443,9 +443,16 @@ class FeaturePipeline:
         out_dir = self.output_dir / coin / timeframe
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / f"{coin}_{timeframe}_features.parquet"
+        flat_out_file = self.output_dir / f"{coin}_{timeframe}_features.parquet"
 
         final_df.to_parquet(
             out_file,
+            engine="pyarrow",
+            compression=self.compression,
+            index=False,
+        )
+        final_df.to_parquet(
+            flat_out_file,
             engine="pyarrow",
             compression=self.compression,
             index=False,

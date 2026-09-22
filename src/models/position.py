@@ -27,6 +27,16 @@ class Position:
     atr_at_entry: Optional[Decimal] = None
     sl_price: Optional[Decimal] = None
     tp_price: Optional[Decimal] = None
+    bars_held: int = 0
+    max_holding_bars: int = 12
+
+    def increment_bars_held(self) -> "Position":
+        """Increments the count of completed candles held for this position."""
+        return replace(self, bars_held=self.bars_held + 1)
+
+    def check_time_barrier(self) -> bool:
+        """Returns True if the position has reached or exceeded max holding bars."""
+        return self.bars_held >= self.max_holding_bars
 
     def calculate_unrealized_pnl(self, current_price: Decimal) -> Decimal:
         """

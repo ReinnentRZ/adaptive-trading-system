@@ -9,9 +9,8 @@ Here is a quick overview of the key folders in the workspace:
 - **`src/core/`**: Enums, state managers, and signal data structures.
 - **`src/data/`**: Historical and real-time market data ingestion and WebSockets.
 - **`src/execution/`**: Real and mock brokers, order validation, and position trackers.
-- **`src/indicators/`**: Implementations of technical indicators (ADX, RSI, WaveTrend, CCI).
 - **`src/services/`**: API wrapper services (e.g., BinanceClient wrapper).
-- **`src/strategies/`**: Algorithmic trading strategies (e.g., Lorentzian classification).
+- **`src/strategies/`**: Algorithmic trading strategies (RegimeFunnelStrategy: HMM Market Regime Corong 3-Pilar SSOT).
 - **`main.py`**: The entry point to start the live trading bot.
 
 ---

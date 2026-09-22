@@ -4,43 +4,47 @@ venv/
 env/
 ENV/
 
-# Python cache
+# Python cache & build artifacts
 **/__pycache__/
 **/*.pyc
 **/*.pyo
 **/*.pyd
+build/
+dist/
+*.egg-info/
 
-# Git
+# Git & CI/CD
 .git/
 .gitignore
 .github/
 
-# Local secrets & env
+# Environment and secrets
 .env
 .env.*
 !.env.example
 
-# Data & logs
-logs/
-*.db
+# Datasets (large historical raw / processed data)
+dataset/
+data/*.csv
+data/*.parquet
+
+# Logs & temporary run data
+logs/*.log
+logs/*.csv
 *.sqlite
-*.log
+*.db
 
 # IDE & Editor settings
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.swp
-
-# Docker files
-Dockerfile*
-docker-compose*
 
 # Testing & coverage
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
+
+# Docker files
+Dockerfile*
+docker-compose*
