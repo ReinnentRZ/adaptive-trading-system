@@ -41,9 +41,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Prepare Environment File
+      - name: Prepare Environment File & Directories
         run: |
           cp .env.example .env
+          mkdir -p -m 777 data logs
+          chmod -R 777 data logs 2>/dev/null || true
 
       - name: Build Docker Test Image
         run: |

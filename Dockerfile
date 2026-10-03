@@ -38,7 +38,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 RUN useradd -u 1000 -m appuser \
     && mkdir -p /app/data /app/logs /app/models \
     && chown -R appuser:appuser /app \
-    && chmod -R 775 /app/data /app/logs
+    && chmod -R 777 /app/data /app/logs
 
 USER appuser
 

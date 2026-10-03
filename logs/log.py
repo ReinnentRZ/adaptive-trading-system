@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import sqlite3
 import contextlib
@@ -46,11 +47,19 @@ class TelemetryLogger:
     """
     def __init__(self, db_path: str):
         self.db_path = db_path
+        self._is_ready = False
         # Ensure target directories exist
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-        self._init_db()
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+            except (PermissionError, OSError) as e:
+                sys.stderr.write(f"[WARN] Cannot create telemetry directory '{db_dir}': {e}\n")
+        try:
+            self._init_db()
+            self._is_ready = True
+        except (sqlite3.OperationalError, PermissionError, OSError) as e:
+            sys.stderr.write(f"[WARN] Failed to initialize telemetry database '{self.db_path}': {e}\n")
 
     def _init_db(self) -> None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
@@ -96,6 +105,8 @@ class TelemetryLogger:
                     conn.execute("ALTER TABLE telemetry ADD COLUMN target_rr_ratio REAL;")
 
     def save_telemetry(self, data: CandleTelemetry) -> None:
+        if not self._is_ready:
+            return
         neighbours_json = json.dumps(data.neighbours)
         query = """
             INSERT OR REPLACE INTO telemetry (
@@ -106,31 +117,34 @@ class TelemetryLogger:
                 applied_atr_period, market_regime, target_rr_ratio
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            with conn:
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute(query, (
-                    data.timestamp,
-                    data.datetime_utc,
-                    data.datetime_wib,
-                    data.close_price,
-                    data.rsi,
-                    data.rsi_smoothing,
-                    data.adx,
-                    data.adx_smoothing,
-                    data.cci,
-                    data.cci_smoothing,
-                    data.wt1,
-                    data.wt2,
-                    neighbours_json,
-                    data.raw_prediction,
-                    data.signal_name,
-                    data.ram_usage_mb,
-                    data.atr,
-                    data.applied_atr_period,
-                    data.market_regime,
-                    data.target_rr_ratio
-                ))
+        try:
+            with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+                with conn:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute(query, (
+                        data.timestamp,
+                        data.datetime_utc,
+                        data.datetime_wib,
+                        data.close_price,
+                        data.rsi,
+                        data.rsi_smoothing,
+                        data.adx,
+                        data.adx_smoothing,
+                        data.cci,
+                        data.cci_smoothing,
+                        data.wt1,
+                        data.wt2,
+                        neighbours_json,
+                        data.raw_prediction,
+                        data.signal_name,
+                        data.ram_usage_mb,
+                        data.atr,
+                        data.applied_atr_period,
+                        data.market_regime,
+                        data.target_rr_ratio
+                    ))
+        except (sqlite3.OperationalError, PermissionError, OSError) as e:
+            sys.stderr.write(f"[WARN] Failed to write telemetry to '{self.db_path}': {e}\n")
 
 
 # Initialize Operational Logger
@@ -138,28 +152,38 @@ logger = logging.getLogger("trading_system")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    # Ensure log directories exist
-    log_dir = os.path.dirname(config.logging.log_file_path)
-    if log_dir:
-        os.makedirs(log_dir, exist_ok=True)
-
     formatter = logging.Formatter(
         "[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
-    
+
     # Force logs to be displayed in WIB timezone (UTC+7)
     wib_tz = timezone(timedelta(hours=7))
     formatter.converter = lambda ts: datetime.fromtimestamp(ts, tz=wib_tz).timetuple()
 
-    # File Handler
-    file_handler = logging.FileHandler(config.logging.log_file_path, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    # Ensure log directories exist safely
+    log_path = getattr(config.logging, "log_file_path", "logs/logs.txt")
+    log_dir = os.path.dirname(log_path)
+    if log_dir:
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            sys.stderr.write(f"[WARN] Cannot create log directory '{log_dir}': {e}\n")
+
+    # File Handler with robust permission fallback
+    try:
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except (PermissionError, OSError) as e:
+        sys.stderr.write(
+            f"[WARN] Failed to initialize FileHandler at '{log_path}': {e}. "
+            "Falling back to console logging.\n"
+        )
 
     # Console Handler
-    if config.logging.enable_console_log:
-        console_handler = logging.StreamHandler()
+    if getattr(config.logging, "enable_console_log", True) or not logger.handlers:
+        console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
