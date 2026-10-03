@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
-from src.config.strategy import RegimeFunnelConfig
+from src.config.strategy import AdaptiveBracketParams, RegimeFunnelConfig
 
 
 # ==============================================================================
@@ -356,6 +356,7 @@ LOGGING = config.logging
 WEBSOCKET = config.websocket
 STRATEGY = config.strategy
 REGIME_FUNNEL = config.regime_funnel
+ADAPTIVE_BRACKETS = config.regime_funnel.adaptive_brackets
 API_KEY = config.api.api_key
 API_SECRET = config.api.api_secret
 AI_THRESHOLD = config.strategy.ai_threshold
@@ -371,6 +372,7 @@ __all__ = [
     "StrategyConfig",
     "WebSocketConfig",
     "RegimeFunnelConfig",
+    "AdaptiveBracketParams",
     "MARKET",
     "TRADING",
     "INDICATORS",
@@ -378,6 +380,7 @@ __all__ = [
     "WEBSOCKET",
     "STRATEGY",
     "REGIME_FUNNEL",
+    "ADAPTIVE_BRACKETS",
     "API_KEY",
     "API_SECRET",
     "AI_THRESHOLD",

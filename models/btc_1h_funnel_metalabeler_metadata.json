@@ -1,0 +1,86 @@
+{
+  "coin": "btc",
+  "timeframe": "1h",
+  "total_candidates": 257,
+  "ground_truth_wins": 102,
+  "ground_truth_losses": 155,
+  "baseline_win_rate_pct": 39.69,
+  "brier_score_loss": 0.2128,
+  "roc_auc": 0.7909,
+  "prob_min": 0.3052,
+  "prob_max": 0.5572,
+  "prob_mean": 0.4234,
+  "feature_columns": [
+    "rsi",
+    "cci",
+    "adx",
+    "wt_diff",
+    "atr",
+    "volatility_ratio",
+    "normalized_atr",
+    "lorentzian_signal"
+  ],
+  "threshold_evaluations": [
+    {
+      "threshold": 0.4,
+      "approved_trades": 154,
+      "approval_pct": 59.92,
+      "win_rate_pct": 59.74,
+      "baseline_win_rate": 39.69,
+      "precision": 0.5974,
+      "recall": 0.902,
+      "f1": 0.7188
+    },
+    {
+      "threshold": 0.45,
+      "approved_trades": 109,
+      "approval_pct": 42.41,
+      "win_rate_pct": 58.72,
+      "baseline_win_rate": 39.69,
+      "precision": 0.5872,
+      "recall": 0.6275,
+      "f1": 0.6066
+    },
+    {
+      "threshold": 0.48,
+      "approved_trades": 61,
+      "approval_pct": 23.74,
+      "win_rate_pct": 73.77,
+      "baseline_win_rate": 39.69,
+      "precision": 0.7377,
+      "recall": 0.4412,
+      "f1": 0.5521
+    },
+    {
+      "threshold": 0.5,
+      "approved_trades": 28,
+      "approval_pct": 10.89,
+      "win_rate_pct": 82.14,
+      "baseline_win_rate": 39.69,
+      "precision": 0.8214,
+      "recall": 0.2255,
+      "f1": 0.3538
+    },
+    {
+      "threshold": 0.52,
+      "approved_trades": 13,
+      "approval_pct": 5.06,
+      "win_rate_pct": 92.31,
+      "baseline_win_rate": 39.69,
+      "precision": 0.9231,
+      "recall": 0.1176,
+      "f1": 0.2087
+    },
+    {
+      "threshold": 0.55,
+      "approved_trades": 2,
+      "approval_pct": 0.78,
+      "win_rate_pct": 100.0,
+      "baseline_win_rate": 39.69,
+      "precision": 1.0,
+      "recall": 0.0196,
+      "f1": 0.0385
+    }
+  ],
+  "created_at": "2026-10-03 03:50:07 UTC"
+}

@@ -22,7 +22,12 @@ import pandas as pd
 from scipy.special import logsumexp
 import talib
 
-from src.config import REGIME_FUNNEL, RegimeFunnelConfig
+from src.config import (
+    ADAPTIVE_BRACKETS,
+    REGIME_FUNNEL,
+    AdaptiveBracketParams,
+    RegimeFunnelConfig,
+)
 
 logger = logging.getLogger("regime_funnel_strategy")
 
@@ -44,6 +49,15 @@ class RegimeFunnelStrategy:
         self.sideways_state_id: int = 2
 
         self._load_regime_model()
+
+        # Layer-2 AI Meta-Labeling Decider (LightGBM)
+        self.meta_gate = None
+        if getattr(self.config, "use_meta_labeler", False):
+            from src.strategies.meta_labeler import MetaLabelingGate
+            self.meta_gate = MetaLabelingGate(
+                model_path=getattr(self.config, "meta_model_path", None) or None,
+                threshold=getattr(self.config, "meta_label_threshold", 0.55),
+            )
 
     def _resolve_model_path(self, raw_path: str) -> Path:
         """Resolves model path across relative execution roots."""
@@ -125,11 +139,39 @@ class RegimeFunnelStrategy:
         rsi_14 = talib.RSI(close, timeperiod=self.config.pullback_rsi_period)
         ema_200 = df["close"].ewm(span=self.config.ema_trend_period, adjust=False).mean().to_numpy(dtype=np.float64)
 
+        # Rolling causal median of normalized_atr (window=100 bars, min_periods=20)
+        natr_median = pd.Series(normalized_atr).rolling(window=100, min_periods=20).median().bfill().to_numpy()
+
+        # Rolling causal SMA of volume (period=20)
+        volume_sma20 = pd.Series(volume).rolling(window=self.config.volume_sma_period, min_periods=5).mean().bfill().to_numpy(dtype=np.float64)
+
+        # Quant Model 1: Kalman Filter (low-lag replacement for EMA 9 & EMA 200)
+        if getattr(self.config, "use_kalman_filter", False):
+            from src.strategies.quant_models import kalman_trend_filter
+            k_res = kalman_trend_filter(close, q=self.config.kalman_q, r=self.config.kalman_r)
+            df["kalman_price"] = k_res.kalman_price
+            df["kalman_trend"] = k_res.kalman_trend
+            df["kalman_slope"] = k_res.kalman_slope
+
+        # Quant Model 2: GARCH(1,1) Volatility Forecaster (conditional forward variance)
+        if getattr(self.config, "use_garch_volatility", False):
+            from src.strategies.quant_models import compute_rolling_garch_volatility
+            garch_vols = compute_rolling_garch_volatility(close, lookback=self.config.garch_lookback)
+            df["garch_vol"] = garch_vols
+            df["garch_price_vol"] = garch_vols * df["close"].to_numpy(dtype=np.float64)
+
+        # Quant Model 3: Layer-2 AI Meta-Labeling Features
+        if getattr(self.config, "use_meta_labeler", False):
+            from src.strategies.meta_labeler import MetaLabelingGate
+            df = MetaLabelingGate.extract_features(df)
+
         # Populate DataFrame
         df["log_return"] = log_return
         df["atr_14"] = atr_14
         df["atr"] = atr_14  # Alias for backward compatibility
         df["normalized_atr"] = normalized_atr
+        df["natr_median"] = natr_median
+        df["volume_sma20"] = volume_sma20
         df["volatility"] = normalized_atr  # Model feature alias
         df["volume_intensity"] = volume_intensity
         df["signed_volume"] = signed_volume
@@ -199,20 +241,51 @@ class RegimeFunnelStrategy:
         ema_9 = float(bar["ema_9"])
         rsi_14 = float(bar["rsi_14"])
 
-        # Pilar 1: Macro Gate
+        # Pilar 1: Macro Gate (EMA 200 or Kalman Trend)
+        macro_ref = float(bar["kalman_trend"]) if (getattr(self.config, "use_kalman_filter", False) and "kalman_trend" in bar) else ema_200
         single_shot_ok = (not traded_in_episode) if self.config.single_shot_per_episode else True
         gate_1 = (
             (current_state == self.config.hmm_bullish_state_id)
-            and (close_p > ema_200)
+            and (close_p > macro_ref)
             and (state_age <= self.config.state_age_max)
             and single_shot_ok
         )
 
-        # Pilar 2: Micro Pullback Trigger
-        gate_2 = (low_p <= ema_9) or (rsi_14 <= self.config.pullback_rsi_threshold)
+        # Pilar 2: Micro Pullback Trigger (EMA 9 or Kalman Price)
+        micro_ref = float(bar["kalman_price"]) if (getattr(self.config, "use_kalman_filter", False) and "kalman_price" in bar) else ema_9
+        gate_2 = (low_p <= micro_ref) or (rsi_14 <= self.config.pullback_rsi_threshold)
 
-        signal_passed = bool(gate_1 and gate_2)
-        return signal_passed, {"pilar_1": gate_1, "pilar_2": gate_2}
+        # Volume Confirmation Gate: volume > volume_sma20 * 1.2
+        if getattr(self.config, "use_volume_filter", False) and ("volume" in bar) and ("volume_sma20" in bar):
+            vol_val = float(bar["volume"])
+            vol_sma = float(bar["volume_sma20"])
+            mult = getattr(self.config, "volume_filter_mult", 1.20)
+            gate_vol = bool(vol_val > (vol_sma * mult))
+        else:
+            gate_vol = True
+
+        # Layer-2 AI Meta-Labeling Decider (LightGBM Supreme Court)
+        if getattr(self.config, "use_meta_labeler", False) and self.meta_gate is not None:
+            # Only evaluate AI gate if preliminary quantitative gates passed
+            if gate_1 and gate_2 and gate_vol:
+                meta_res = self.meta_gate.evaluate(df, idx)
+                gate_meta = bool(meta_res.is_approved)
+                meta_prob = float(meta_res.prob_win)
+            else:
+                gate_meta = False
+                meta_prob = 0.0
+        else:
+            gate_meta = True
+            meta_prob = 1.0
+
+        signal_passed = bool(gate_1 and gate_2 and gate_vol and gate_meta)
+        return signal_passed, {
+            "pilar_1": gate_1,
+            "pilar_2": gate_2,
+            "pilar_vol": gate_vol,
+            "pilar_meta": gate_meta,
+            "meta_prob": meta_prob,
+        }
 
     def calculate_risk_brackets(self, entry_price: float, atr: float) -> Dict[str, float]:
         """
@@ -233,3 +306,107 @@ class RegimeFunnelStrategy:
             "tp2_price": float(tp2_price),
             "be_price": float(be_price),
         }
+
+    def calculate_adaptive_brackets(
+        self,
+        entry_price: float,
+        atr_val: float,
+        current_close: float,
+        ema200_val: float,
+        rsi_val: float,
+        natr_val: float,
+        natr_median: float,
+        params: Optional[AdaptiveBracketParams] = None,
+        garch_price_vol: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Calculates dynamic regime-adaptive execution brackets and allocation ratios.
+        """
+        p = params or getattr(self.config, "adaptive_brackets", ADAPTIVE_BRACKETS)
+        return calculate_adaptive_brackets(
+            entry_price=entry_price,
+            atr_val=atr_val,
+            current_close=current_close,
+            ema200_val=ema200_val,
+            rsi_val=rsi_val,
+            natr_val=natr_val,
+            natr_median=natr_median,
+            params=p,
+            garch_price_vol=garch_price_vol,
+        )
+
+
+def calculate_adaptive_brackets(
+    entry_price: float,
+    atr_val: float,
+    current_close: float,
+    ema200_val: float,
+    rsi_val: float,
+    natr_val: float,
+    natr_median: float,
+    params: Optional[AdaptiveBracketParams] = None,
+    garch_price_vol: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Calculates dynamic regime-adaptive brackets (Stop Loss and Take Profit)
+    and exit allocation ratios (Single Source of Truth).
+
+    Rules:
+      1. STRONG_BULL:
+         current_close > ema200_val * 1.015 and rsi_val >= 55.0
+         -> bull_sl_mult (0.70), bull_tp1_mult (1.00), bull_tp2_mult (3.20), bull_tp1_ratio (0.25)
+      2. VOLATILE_CORRECTION:
+         natr_val > natr_median * 1.25 and current_close < ema200_val * 1.01
+         -> corr_sl_mult (0.50), corr_tp1_mult (0.75), corr_tp2_mult (1.10), corr_tp1_ratio (0.50)
+      3. NORMAL_SIDEWAYS (Default):
+         -> side_sl_mult (0.60), side_tp1_mult (0.60), side_tp2_mult (0.90), side_tp1_ratio (0.70)
+
+    Returns:
+      Dict with absolute prices (sl_price, tp1_price, tp2_price, be_price) and ratios (tp1_ratio, tp2_ratio).
+    """
+    if params is None:
+        params = ADAPTIVE_BRACKETS
+
+    # 1. Evaluate regime rules
+    if (current_close > (ema200_val * 1.015)) and (rsi_val >= 55.0):
+        regime_mode = "STRONG_BULL"
+        sl_mult = params.bull_sl_mult
+        tp1_mult = params.bull_tp1_mult
+        tp2_mult = params.bull_tp2_mult
+        tp1_ratio = params.bull_tp1_ratio
+    elif (natr_val > (natr_median * 1.25)) and (current_close < (ema200_val * 1.01)):
+        regime_mode = "VOLATILE_CORRECTION"
+        sl_mult = params.corr_sl_mult
+        tp1_mult = params.corr_tp1_mult
+        tp2_mult = params.corr_tp2_mult
+        tp1_ratio = params.corr_tp1_ratio
+    else:
+        regime_mode = "NORMAL_SIDEWAYS"
+        sl_mult = params.side_sl_mult
+        tp1_mult = params.side_tp1_mult
+        tp2_mult = params.side_tp2_mult
+        tp1_ratio = params.side_tp1_ratio
+
+    tp2_ratio = float(round(1.0 - tp1_ratio, 4))
+
+    # Dynamic volatility unit: GARCH forward dollar volatility or standard ATR
+    vol_unit = float(garch_price_vol) if (garch_price_vol is not None and garch_price_vol > 0) else float(atr_val)
+
+    sl_price = entry_price - (sl_mult * vol_unit)
+    tp1_price = entry_price + (tp1_mult * vol_unit)
+    tp2_price = entry_price + (tp2_mult * vol_unit)
+    be_price = entry_price * 1.0025
+
+    return {
+        "sl_price": float(sl_price),
+        "tp1_price": float(tp1_price),
+        "tp2_price": float(tp2_price),
+        "be_price": float(be_price),
+        "tp1_ratio": float(tp1_ratio),
+        "tp2_ratio": float(tp2_ratio),
+        "regime_mode": regime_mode,
+        "sl_mult": float(sl_mult),
+        "tp1_mult": float(tp1_mult),
+        "tp2_mult": float(tp2_mult),
+        "vol_unit": float(vol_unit),
+    }

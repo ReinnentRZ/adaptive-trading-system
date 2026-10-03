@@ -43,8 +43,16 @@ from scripts.build_features import (
     FeatureExtractor,
     _compute_lorentzian_signals_parallel,
 )
-from src.config import REGIME_FUNNEL, RegimeFunnelConfig
-from src.strategies.regime_funnel import RegimeFunnelStrategy
+from src.config import (
+    ADAPTIVE_BRACKETS,
+    REGIME_FUNNEL,
+    AdaptiveBracketParams,
+    RegimeFunnelConfig,
+)
+from src.strategies.regime_funnel import (
+    RegimeFunnelStrategy,
+    calculate_adaptive_brackets,
+)
 
 # Configure structured logging
 logging.basicConfig(
@@ -92,6 +100,10 @@ class Position:
     original_notional: float = 0.0
     realized_gross: float = 0.0
     realized_fee: float = 0.0
+    tp1_ratio: float = 0.50
+    tp2_ratio: float = 0.50
+    regime_mode: str = "NORMAL_SIDEWAYS"
+    original_entry_fee: float = 0.0
 
 
 @dataclass
@@ -1213,6 +1225,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--processed-dir", type=str, default="dataset/processed", help="Processed dataset directory")
     parser.add_argument("--models-dir", type=str, default="models", help="Models directory")
     parser.add_argument("--logs-dir", type=str, default="logs", help="Logs directory")
+    parser.add_argument("--adaptive-brackets", "--adaptive_brackets", dest="adaptive_brackets", action="store_true", help="Run Regime-Adaptive Brackets (Dynamic SL/TP) benchmark")
+    parser.add_argument("--full-dataset", "--full_dataset", dest="full_dataset", action="store_true", help="Run on full continuous historical dataset (e.g. 10,600 candles)")
+    parser.add_argument("--use-kalman", "--use_kalman", dest="use_kalman", action="store_true", help="Enable 1D Adaptive Kalman Filter (replacing EMA lag)")
+    parser.add_argument("--use-garch", "--use_garch", dest="use_garch", action="store_true", help="Enable GARCH(1,1) forward volatility forecasting for bracket sizing")
+    parser.add_argument("--use-meta", "--use-ai", dest="use_meta", action="store_true", help="Enable Layer-2 LightGBM Meta-Labeling Decider (AI Supreme Court)")
+    parser.add_argument("--meta-threshold", dest="meta_threshold", type=float, default=0.55, help="Probability threshold for AI Meta-Labeler approval (default: 0.55)")
+    parser.add_argument("--use-volume-filter", dest="use_volume_filter", action="store_true", default=None, help="Enable volume confirmation filter")
+    parser.add_argument("--no-volume-filter", dest="use_volume_filter", action="store_false", help="Disable volume confirmation filter")
     return parser.parse_args()
 
 
@@ -1412,14 +1432,23 @@ def run_regime_backtest(
     processed_dir: Path = Path("dataset/processed"),
     models_dir: Path = Path("models"),
     logs_dir: Path = Path("logs"),
+    use_adaptive_brackets: bool = False,
+    full_dataset: bool = False,
+    custom_adaptive_brackets: Optional[AdaptiveBracketParams] = None,
+    use_volume_filter: bool = True,
+    use_kalman_filter: bool = False,
+    use_garch_volatility: bool = False,
+    use_meta_labeler: bool = False,
+    meta_label_threshold: float = 0.55,
+    meta_model_path: Optional[str] = None,
 ) -> Tuple[BacktestResult, Dict[str, int]]:
     """
-    Executes Unsupervised Market Regime State-Transition Backtest on Out-of-Sample (OOS) dataset:
+    Executes Unsupervised Market Regime State-Transition Backtest on OOS or Full dataset:
     - Ingests continuous microstructure features (log_return, volatility, volume_intensity)
     - Loads pre-trained Gaussian HMM / GMM regime model & scaler
     - Causal Online Inference: Computes forward-filtered state probabilities (Zero Lookahead Bias)
     - Pure Entry: Transition into Bullish Momentum State (learned transition, no manual heuristics)
-    - Pure Exit: Transition out of Bullish State, OR TP 2.0x ATR / SL 1.0x ATR / Time Horizon
+    - Pure Exit: Dynamic Adaptive Brackets OR Fixed TP/SL Scaling Out 50:50 / Time Horizon
     """
     from scripts.train_regime_model import (
         MicrostructureFeatureExtractor,
@@ -1474,10 +1503,19 @@ def run_regime_backtest(
         pullback_ema_period=REGIME_FUNNEL.pullback_ema_period,
         pullback_rsi_period=REGIME_FUNNEL.pullback_rsi_period,
         pullback_rsi_threshold=REGIME_FUNNEL.pullback_rsi_threshold,
+        volume_sma_period=REGIME_FUNNEL.volume_sma_period,
+        volume_filter_mult=REGIME_FUNNEL.volume_filter_mult,
+        use_volume_filter=use_volume_filter,
+        use_kalman_filter=use_kalman_filter,
+        use_garch_volatility=use_garch_volatility,
+        use_meta_labeler=use_meta_labeler,
+        meta_label_threshold=meta_label_threshold,
+        meta_model_path=meta_model_path or "",
         risk_sl_mult=sl_multiplier,
         risk_tp1_mult=be_trigger_multiplier,
         risk_tp2_mult=tp_multiplier,
         risk_be_buffer=REGIME_FUNNEL.risk_be_buffer,
+        adaptive_brackets=custom_adaptive_brackets or REGIME_FUNNEL.adaptive_brackets,
         trade_allocation=trade_allocation,
         maker_fee=fee_rate,
         slippage=slippage_rate,
@@ -1494,16 +1532,20 @@ def run_regime_backtest(
     df.dropna(subset=feature_cols + ["atr", "ema_9", "rsi_14", "ema_200"], inplace=True)
     df.reset_index(drop=True, inplace=True)
 
-    # Chronological Split: 70% Train, Purge 12, 15% Val, Purge 12, 15% Test
-    n = len(df)
-    train_end = int(n * 0.70)
-    val_start = train_end + 12
-    val_end = val_start + int(n * 0.15)
-    test_start = val_end + 12
+    if full_dataset:
+        # Full historical continuous dataset (starting from bar index 200 after warm-up)
+        df_test = df.iloc[200:].copy().reset_index(drop=True)
+    else:
+        # Chronological Split: 70% Train, Purge 12, 15% Val, Purge 12, 15% Test
+        n = len(df)
+        train_end = int(n * 0.70)
+        val_start = train_end + 12
+        val_end = val_start + int(n * 0.15)
+        test_start = val_end + 12
+        df_test = df.iloc[test_start:].copy().reset_index(drop=True)
 
-    df_test = df.iloc[test_start:].copy().reset_index(drop=True)
     if df_test.empty:
-        raise ValueError(f"OOS test set is empty for {coin_clean} {tf_clean}")
+        raise ValueError(f"Test set is empty for {coin_clean} {tf_clean}")
 
     # Causal Online Inference (Zero Lookahead Bias)
     if hasattr(strategy.model, "transmat_"):
@@ -1513,8 +1555,9 @@ def run_regime_backtest(
         X_test = strategy.scaler.transform(df_test[feature_cols].to_numpy(dtype=np.float64))
         df_test["regime_state"] = strategy.model.predict(X_test)
 
+    dataset_desc = "Full Continuous" if full_dataset else "OOS"
     logger.info(
-        f"[{coin_clean.upper()}] [{tf_clean}] Loaded OOS {detected_model_type.upper()} Test Set: {len(df_test):,} candles "
+        f"[{coin_clean.upper()}] [{tf_clean}] Loaded {dataset_desc} {detected_model_type.upper()} Set: {len(df_test):,} candles "
         f"({df_test['datetime'].iloc[0]} to {df_test['datetime'].iloc[-1]}) | Bullish State: {bullish_state_id}"
     )
 
@@ -1548,17 +1591,58 @@ def run_regime_backtest(
         # Next-Bar Open Execution: Fill pending BUY orders at current bar Open (t+1)
         if pending_entry is not None and not open_positions:
             signal_bar_idx, signal_atr, signal_dt = pending_entry
+            signal_bar = df_test.iloc[signal_bar_idx]
             trade_counter += 1
             entry_fill_price = o * (1.0 + slippage_rate)
             notional = trade_allocation
             entry_fee = notional * fee_rate
             quantity = notional / entry_fill_price
 
-            # Pilar 3 Initial Risk Boundaries (Scaling Out 50:50)
-            brackets = strategy.calculate_risk_brackets(entry_fill_price, signal_atr)
-            tp1_price = brackets["tp1_price"]
-            tp2_price = brackets["tp2_price"]
-            sl_price = brackets["sl_price"]
+            if use_adaptive_brackets:
+                sig_close = float(signal_bar["close"])
+                sig_ema200 = float(signal_bar["ema_200"])
+                sig_trend_ref = (
+                    float(signal_bar["kalman_trend"])
+                    if (use_kalman_filter and "kalman_trend" in signal_bar)
+                    else sig_ema200
+                )
+                sig_rsi = float(signal_bar["rsi_14"])
+                sig_natr = float(signal_bar["normalized_atr"])
+                sig_natr_median = (
+                    float(signal_bar["natr_median"])
+                    if "natr_median" in signal_bar and not np.isnan(signal_bar["natr_median"])
+                    else float(df_test["normalized_atr"].iloc[max(0, signal_bar_idx - 100) : signal_bar_idx + 1].median())
+                )
+                garch_p_vol = (
+                    float(signal_bar["garch_price_vol"])
+                    if (use_garch_volatility and "garch_price_vol" in signal_bar and not np.isnan(signal_bar["garch_price_vol"]))
+                    else None
+                )
+                adaptive_b = strategy.calculate_adaptive_brackets(
+                    entry_price=entry_fill_price,
+                    atr_val=signal_atr,
+                    current_close=sig_close,
+                    ema200_val=sig_trend_ref,
+                    rsi_val=sig_rsi,
+                    natr_val=sig_natr,
+                    natr_median=sig_natr_median,
+                    params=custom_adaptive_brackets or strategy.config.adaptive_brackets,
+                    garch_price_vol=garch_p_vol,
+                )
+                tp1_price = adaptive_b["tp1_price"]
+                tp2_price = adaptive_b["tp2_price"]
+                sl_price = adaptive_b["sl_price"]
+                tp1_ratio = adaptive_b["tp1_ratio"]
+                tp2_ratio = adaptive_b["tp2_ratio"]
+                regime_mode = adaptive_b["regime_mode"]
+            else:
+                brackets = strategy.calculate_risk_brackets(entry_fill_price, signal_atr)
+                tp1_price = brackets["tp1_price"]
+                tp2_price = brackets["tp2_price"]
+                sl_price = brackets["sl_price"]
+                tp1_ratio = 0.50
+                tp2_ratio = 0.50
+                regime_mode = "STATIC"
 
             cash_balance -= (notional + entry_fee)
 
@@ -1585,6 +1669,10 @@ def run_regime_backtest(
                 original_notional=notional,
                 realized_gross=0.0,
                 realized_fee=0.0,
+                tp1_ratio=tp1_ratio,
+                tp2_ratio=tp2_ratio,
+                regime_mode=regime_mode,
+                original_entry_fee=entry_fee,
             )
             open_positions.append(new_pos)
             pending_entry = None
@@ -1599,7 +1687,7 @@ def run_regime_backtest(
             traded_in_current_episode = False
 
         # ==============================================================================
-        # PILAR 3: Position Management & Dynamic Risk Engine (Scaling Out 50:50, SL, TP)
+        # PILAR 3: Position Management & Dynamic Risk Engine (Scaling Out, SL, TP)
         # ==============================================================================
         remaining_positions: List[Position] = []
         for pos in open_positions:
@@ -1621,12 +1709,12 @@ def run_regime_backtest(
                 exit_triggered = True
             else:
                 # Stop loss was NOT hit on this bar.
-                # 1. Target Tahap 1 (TP1 - Amankan 50% Posisi): High >= Entry + 0.80 * ATR
+                # 1. Target Tahap 1 (TP1 - Scaling Out): High >= pos.tp1_price
                 if (not pos.tp1_taken) and (h >= pos.tp1_price):
-                    # Tutup 50% alokasi posisi pada harga TP1
-                    tp1_qty = pos.quantity * 0.5
-                    tp1_notional = pos.notional_value * 0.5
-                    tp1_entry_fee = pos.entry_fee * 0.5
+                    ratio = pos.tp1_ratio
+                    tp1_qty = pos.original_quantity * ratio
+                    tp1_notional = pos.original_notional * ratio
+                    tp1_entry_fee = pos.original_entry_fee * ratio
                     tp1_exit_price = pos.tp1_price * (1.0 - slippage_rate)
                     tp1_exit_val = tp1_qty * tp1_exit_price
                     tp1_exit_fee = tp1_exit_val * fee_rate
@@ -1641,7 +1729,7 @@ def run_regime_backtest(
                     pos.entry_fee -= tp1_entry_fee
                     pos.tp1_taken = True
                     pos.is_break_even = True
-                    # Geser Stop Loss sisa 50% posisi ke: Entry_Price * 1.0025 (+0.25% net fee lock)
+                    # Geser Stop Loss sisa posisi ke: Entry_Price * 1.0025 (+0.25% net fee lock)
                     pos.stop_loss = max(pos.stop_loss, pos.entry_price * strategy.config.risk_be_buffer)
 
                 # 2. Target Tahap 2 (TP2 - Sisa 50% Posisi): High >= Entry + 1.20 * ATR
@@ -1858,34 +1946,252 @@ def run_regime_backtest(
 def display_regime_report(result: BacktestResult, exit_breakdown: Dict[str, int], model_title: str = "GAUSSIAN HMM") -> None:
     """Renders comprehensive summary report for Unsupervised Regime State-Transition Backtest."""
     coin_display = result.coin if result.coin.endswith("USDT") else f"{result.coin}USDT"
-    title = f"UNSUPERVISED MARKET REGIME BACKTEST REPORT ({model_title} - OOS {coin_display} {result.timeframe})"
-    print("\n" + "=" * 125)
-    print(f"{title:^125}")
-    print("=" * 125)
-    print(
-        f"{'Coin / TF':<15} | {'Total Trades':<13} | {'Win Rate (%)':<13} | "
-        f"{'Profit Factor':<14} | {'Net PnL ($)':<12} | {'Max DD (%)':<11} | {'Sharpe':<8}"
-    )
-    print("-" * 125)
-    print(
-        f"{result.coin + '[' + result.timeframe + ']':<15} | "
-        f"{result.total_trades:<13} | {result.win_rate_pct:<13.2f} | "
-        f"{result.profit_factor:<14.2f} | {result.net_profit_usdt:<+12.2f} | "
-        f"{result.max_drawdown_pct:<11.2f} | {result.sharpe_ratio:<8.2f}"
-    )
-    print("=" * 125)
+    title = f"MARKET REGIME PERFORMANCE REPORT ({model_title} - {coin_display} [{result.timeframe}])"
+    print("\n" + "=" * 115)
+    print(f"{title:^115}")
+    print("=" * 115)
+    print(f"  Initial Capital        : ${result.initial_capital:,.2f}")
+    print(f"  Final Balance          : ${result.final_balance:,.2f}")
+    print(f"  Net PnL (USDT)         : ${result.net_profit_usdt:+,.2f} ({result.net_profit_pct:+.2f}%)")
+    print(f"  Total Trades           : {result.total_trades} (Wins: {result.winning_trades}, Losses: {result.losing_trades})")
+    print(f"  Win Rate (%)           : {result.win_rate_pct:.2f}%")
+    print(f"  Profit Factor          : {result.profit_factor:.2f}")
+    print(f"  Max Drawdown (%)       : {result.max_drawdown_pct:.2f}%")
+    print(f"  Sharpe Ratio           : {result.sharpe_ratio:.2f}")
+    print(f"  Total Fees Paid ($)    : ${result.total_fees_paid:,.4f}")
+    print("=" * 115)
+
     if exit_breakdown:
         print("\n--- Rincian Eksekusi Exit Posisi ---")
-        for reason, cnt in exit_breakdown.items():
+        for reason, cnt in sorted(exit_breakdown.items(), key=lambda x: x[1], reverse=True):
             pct = (cnt / result.total_trades * 100.0) if result.total_trades > 0 else 0.0
-            print(f"  - {reason:<15}: {cnt:>5} trades ({pct:>6.2f}%)")
-        print("-" * 50)
-    print("\n")
+            print(f"  - {reason:<22}: {cnt:>5} trades ({pct:>6.2f}%)")
+        print("-" * 55)
+
+    # Display Sample Trade Logs (Top 3 Winning Trades and Top 3 Losing Trades)
+    if result.trades_log_path and result.trades_log_path.exists():
+        try:
+            df_t = pd.read_csv(result.trades_log_path)
+            if not df_t.empty and "net_pnl" in df_t.columns:
+                df_sorted = df_t.sort_values(by="net_pnl", ascending=False)
+                top_wins = df_sorted[df_sorted["net_pnl"] > 0].head(3)
+                top_losses = df_sorted[df_sorted["net_pnl"] <= 0].tail(3).sort_values(by="net_pnl", ascending=True)
+
+                print("\n--- 3 Trade Menang Terbesar ---")
+                if not top_wins.empty:
+                    print(f"{'Entry Time':<24} | {'Exit Time':<24} | {'Entry Price':<12} | {'Exit Price':<12} | {'Net PnL ($)':<12} | {'Return (%)':<10} | {'Exit Reason':<15}")
+                    print("-" * 115)
+                    for _, row in top_wins.iterrows():
+                        print(f"{str(row.get('entry_time', ''))[:19]:<24} | {str(row.get('exit_time', ''))[:19]:<24} | ${float(row.get('entry_price', 0)):>10,.2f} | ${float(row.get('exit_price', 0)):>10,.2f} | ${float(row.get('net_pnl', 0)):>+10.2f} | {float(row.get('return_pct', 0)):>+8.2f}% | {str(row.get('exit_reason', '')):<15}")
+                else:
+                    print("  Tidak ada trade menang.")
+
+                print("\n--- 3 Trade Kalah Terbesar ---")
+                if not top_losses.empty:
+                    print(f"{'Entry Time':<24} | {'Exit Time':<24} | {'Entry Price':<12} | {'Exit Price':<12} | {'Net PnL ($)':<12} | {'Return (%)':<10} | {'Exit Reason':<15}")
+                    print("-" * 115)
+                    for _, row in top_losses.iterrows():
+                        print(f"{str(row.get('entry_time', ''))[:19]:<24} | {str(row.get('exit_time', ''))[:19]:<24} | ${float(row.get('entry_price', 0)):>10,.2f} | ${float(row.get('exit_price', 0)):>10,.2f} | ${float(row.get('net_pnl', 0)):>+10.2f} | {float(row.get('return_pct', 0)):>+8.2f}% | {str(row.get('exit_reason', '')):<15}")
+                else:
+                    print("  Tidak ada trade kalah.")
+                print("-" * 115 + "\n")
+        except Exception as err:
+            logger.warning(f"Could not load trades log for samples: {err}")
+
+
+def display_adaptive_brackets_report(
+    res_static: BacktestResult,
+    res_adaptive: BacktestResult,
+    exit_static: Dict[str, int],
+    exit_adaptive: Dict[str, int],
+    coin: str = "btc",
+    timeframe: str = "1h",
+    label_v1: str = "Adaptif v1 (Versi Saat Ini)",
+    label_v2: str = "Adaptif v2 (Optimal)",
+) -> None:
+    """Renders comprehensive side-by-side comparative report for Adaptive Brackets."""
+    header_title = f"REGIME-ADAPTIVE BRACKETS BENCHMARK REPORT ({coin.upper()}USDT [{timeframe}] - FULL DATASET)"
+    print("\n" + "=" * 125)
+    print(header_title.center(125))
+    print("=" * 125)
+    print(
+        f"{'Metrik Evaluasi':<32} | {label_v1:<30} | "
+        f"{label_v2:<30} | {'Delta (Selisih)':<20}"
+    )
+    print("-" * 125)
+
+    delta_wr = res_adaptive.win_rate_pct - res_static.win_rate_pct
+    delta_fee = res_adaptive.total_fees_paid - res_static.total_fees_paid
+    delta_bal = res_adaptive.final_balance - res_static.final_balance
+    delta_pnl_usdt = res_adaptive.net_profit_usdt - res_static.net_profit_usdt
+    delta_pnl_pct = res_adaptive.net_profit_pct - res_static.net_profit_pct
+    delta_pf = res_adaptive.profit_factor - res_static.profit_factor
+    delta_mdd = res_adaptive.max_drawdown_pct - res_static.max_drawdown_pct
+    delta_sharpe = res_adaptive.sharpe_ratio - res_static.sharpe_ratio
+
+    print(f"{'Total Trades':<32} | {res_static.total_trades:<30} | {res_adaptive.total_trades:<30} | {res_adaptive.total_trades - res_static.total_trades:+d}")
+    print(f"{'Winning Trades':<32} | {res_static.winning_trades:<30} | {res_adaptive.winning_trades:<30} | {res_adaptive.winning_trades - res_static.winning_trades:+d}")
+    print(f"{'Losing Trades':<32} | {res_static.losing_trades:<30} | {res_adaptive.losing_trades:<30} | {res_adaptive.losing_trades - res_static.losing_trades:+d}")
+    print(f"{'Win Rate (%)':<32} | {res_static.win_rate_pct:>29.2f}% | {res_adaptive.win_rate_pct:>29.2f}% | {delta_wr:>+19.2f}%")
+    print(f"{'Total Fee ($)':<32} | ${res_static.total_fees_paid:>28.4f} | ${res_adaptive.total_fees_paid:>28.4f} | ${delta_fee:>+18.4f}")
+    print(f"{'Final Balance ($)':<32} | ${res_static.final_balance:>28.2f} | ${res_adaptive.final_balance:>28.2f} | ${delta_bal:>+18.2f}")
+    print(f"{'Net PnL (USDT)':<32} | ${res_static.net_profit_usdt:>+28.2f} | ${res_adaptive.net_profit_usdt:>+28.2f} | ${delta_pnl_usdt:>+18.2f}")
+    print(f"{'Net PnL (%)':<32} | {res_static.net_profit_pct:>29.2f}% | {res_adaptive.net_profit_pct:>29.2f}% | {delta_pnl_pct:>+19.2f}%")
+    print(f"{'Profit Factor':<32} | {res_static.profit_factor:>30.2f} | {res_adaptive.profit_factor:>30.2f} | {delta_pf:>+20.2f}")
+    print(f"{'Max Drawdown (%)':<32} | {res_static.max_drawdown_pct:>29.2f}% | {res_adaptive.max_drawdown_pct:>29.2f}% | {delta_mdd:>+19.2f}%")
+    print(f"{'Sharpe Ratio':<32} | {res_static.sharpe_ratio:>30.2f} | {res_adaptive.sharpe_ratio:>30.2f} | {delta_sharpe:>+20.2f}")
+    print("=" * 125)
+
+    print("\n--- Rincian Eksekusi Exit Posisi ---")
+    all_reasons = sorted(set(list(exit_static.keys()) + list(exit_adaptive.keys())))
+    print(f"{'Alasan Exit':<20} | {label_v1:<26} | {label_v2:<26}")
+    print("-" * 78)
+    for r in all_reasons:
+        cnt_s = exit_static.get(r, 0)
+        cnt_a = exit_adaptive.get(r, 0)
+        pct_s = (cnt_s / res_static.total_trades * 100.0) if res_static.total_trades else 0.0
+        pct_a = (cnt_a / res_adaptive.total_trades * 100.0) if res_adaptive.total_trades else 0.0
+        print(f"{r:<20} | {cnt_s:>5} trades ({pct_s:>5.1f}%) | {cnt_a:>5} trades ({pct_a:>5.1f}%)")
+    print("-" * 78 + "\n")
+
+
+def run_adaptive_brackets_benchmark(
+    coin: str = "btc",
+    timeframe: str = "1h",
+    initial_capital: float = 100.0,
+    trade_allocation: float = 30.0,
+    fee_rate: float = 0.0002,
+    slippage_rate: float = 0.0,
+    cooldown_bars: int = 3,
+    processed_dir: Path = Path("dataset/processed"),
+    models_dir: Path = Path("models"),
+    logs_dir: Path = Path("logs"),
+) -> Tuple[BacktestResult, BacktestResult]:
+    """
+    Runs side-by-side comparative backtest benchmark between
+    Adaptif v1 (Versi Saat Ini: TP2 2.0x, no vol filter) and
+    Adaptif v2 (Versi Optimal: TP2 3.2x, volume filter) on the full continuous historical dataset.
+    """
+    logger.info(f"Running Skenario 1: Adaptif v1 (Versi Saat Ini) on {coin.upper()} [{timeframe}] (Full Dataset)...")
+    res_v1, exit_v1 = run_regime_backtest(
+        coin=coin,
+        timeframe=timeframe,
+        model_type="hmm",
+        initial_capital=initial_capital,
+        trade_allocation=trade_allocation,
+        fee_rate=fee_rate,
+        slippage_rate=slippage_rate,
+        cooldown_bars=cooldown_bars,
+        processed_dir=processed_dir,
+        models_dir=models_dir,
+        logs_dir=logs_dir,
+        use_adaptive_brackets=True,
+        custom_adaptive_brackets=AdaptiveBracketParams(bull_tp2_mult=2.00, bull_tp1_ratio=0.30),
+        use_volume_filter=False,
+        full_dataset=True,
+    )
+
+    logger.info(f"Running Skenario 2: Adaptif v2 (Optimal: TP2 3.2x + Vol Filter) on {coin.upper()} [{timeframe}] (Full Dataset)...")
+    res_v2, exit_v2 = run_regime_backtest(
+        coin=coin,
+        timeframe=timeframe,
+        model_type="hmm",
+        initial_capital=initial_capital,
+        trade_allocation=trade_allocation,
+        fee_rate=fee_rate,
+        slippage_rate=slippage_rate,
+        cooldown_bars=cooldown_bars,
+        processed_dir=processed_dir,
+        models_dir=models_dir,
+        logs_dir=logs_dir,
+        use_adaptive_brackets=True,
+        custom_adaptive_brackets=AdaptiveBracketParams(bull_tp2_mult=3.20, bull_tp1_ratio=0.25),
+        use_volume_filter=True,
+        full_dataset=True,
+    )
+
+    display_adaptive_brackets_report(
+        res_static=res_v1,
+        res_adaptive=res_v2,
+        exit_static=exit_v1,
+        exit_adaptive=exit_v2,
+        coin=coin,
+        timeframe=timeframe,
+        label_v1="Adaptif v1 (Versi Saat Ini)",
+        label_v2="Adaptif v2 (Optimal: TP2 3.2x+Vol)",
+    )
+    return res_v1, res_v2
 
 
 def main() -> None:
     """Main CLI execution flow."""
     args = parse_args()
+
+    if args.use_kalman or args.use_garch or args.use_meta:
+        # Run Quant Model Single Full Performance Backtest (Kalman + GARCH + Meta-Labeler + Adaptive)
+        coin = (args.coin or "btc").lower()
+        tf = (args.timeframe or "1h").lower()
+        trade_alloc = args.trade_allocation if args.trade_allocation != 15.0 else (30.0 if tf == "1h" else 20.0)
+        use_vol = args.use_volume_filter if args.use_volume_filter is not None else False
+
+        logger.info(
+            f"Starting Quant Model Performance Backtest for {coin.upper()} [{tf}] "
+            f"(Kalman: {args.use_kalman}, GARCH: {args.use_garch}, MetaAI: {args.use_meta}, Adaptive: {args.adaptive_brackets}, "
+            f"Capital: ${args.capital:.2f}, Trade: ${trade_alloc:.2f}, VolFilter: {use_vol})"
+        )
+        res_quant, exit_breakdown = run_regime_backtest(
+            coin=coin,
+            timeframe=tf,
+            model_type="hmm",
+            initial_capital=args.capital,
+            trade_allocation=trade_alloc,
+            max_exposure_pct=args.max_exposure_pct,
+            fee_rate=args.fee,
+            slippage_rate=args.slippage,
+            cooldown_bars=args.cooldown_bars,
+            processed_dir=Path(args.processed_dir),
+            models_dir=Path(args.models_dir),
+            logs_dir=Path(args.logs_dir),
+            use_adaptive_brackets=args.adaptive_brackets,
+            full_dataset=True,
+            use_volume_filter=use_vol,
+            use_kalman_filter=args.use_kalman,
+            use_garch_volatility=args.use_garch,
+            use_meta_labeler=args.use_meta,
+            meta_label_threshold=args.meta_threshold,
+        )
+        parts = []
+        if args.use_kalman: parts.append("KALMAN")
+        if args.use_garch: parts.append("GARCH")
+        if args.use_meta: parts.append("LIGHTGBM AI")
+        if args.adaptive_brackets: parts.append("ADAPTIVE")
+        title = f"HOLY GRAIL UPGRADE ({' + '.join(parts) if parts else 'QUANT MODEL'})"
+        display_regime_report(res_quant, exit_breakdown, model_title=title)
+        return
+
+    if args.adaptive_brackets:
+        # Run Adaptive Brackets Comparative Benchmark on full dataset (10,600 candles)
+        coin = (args.coin or "btc").lower()
+        tf = (args.timeframe or "1h").lower()
+        trade_alloc = args.trade_allocation if args.trade_allocation != 15.0 else (30.0 if tf == "1h" else 20.0)
+
+        logger.info(
+            f"Starting Regime-Adaptive Brackets Benchmark for {coin.upper()} [{tf}] "
+            f"(Capital: ${args.capital:.2f}, Trade: ${trade_alloc:.2f}, Full Dataset: True)"
+        )
+        run_adaptive_brackets_benchmark(
+            coin=coin,
+            timeframe=tf,
+            initial_capital=args.capital,
+            trade_allocation=trade_alloc,
+            fee_rate=args.fee,
+            slippage_rate=args.slippage,
+            cooldown_bars=args.cooldown_bars,
+            processed_dir=Path(args.processed_dir),
+            models_dir=Path(args.models_dir),
+            logs_dir=Path(args.logs_dir),
+        )
+        return
 
     if args.regime or args.regime_hmm:
         # Run Unsupervised Market Regime Backtest
@@ -1893,7 +2199,7 @@ def main() -> None:
         tf = (args.timeframe or "15m").lower()
         trade_alloc = args.trade_allocation if args.trade_allocation != 15.0 else (30.0 if tf == "1h" else 20.0)
         model_type = "hmm" if (args.regime_hmm or not args.regime) else "hmm"
-        
+
         logger.info(
             f"Starting {model_type.upper()} Regime Backtest for {coin.upper()} [{tf}] (Capital: ${args.capital:.2f}, Trade: ${trade_alloc:.2f})"
         )
@@ -1910,6 +2216,8 @@ def main() -> None:
             processed_dir=Path(args.processed_dir),
             models_dir=Path(args.models_dir),
             logs_dir=Path(args.logs_dir),
+            use_adaptive_brackets=args.adaptive_brackets,
+            full_dataset=args.full_dataset,
         )
         display_regime_report(res_regime, exit_breakdown, model_title="GAUSSIAN HMM")
         return
