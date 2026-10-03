@@ -1,72 +1,54 @@
-name: Continuous Integration
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
-  test:
-    name: Lint & Test
+  lint:
+    name: Lint & Format Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Cache TA-Lib C-Library
-        id: cache-talib
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/lib/libta_lib*
-            /usr/include/ta-lib
-          key: ${{ runner.os }}-talib-0.4.0
-
-      - name: Install TA-Lib C-Library
-        if: steps.cache-talib.outputs.cache-hit != 'true'
+      - name: Install Linter Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential wget curl
-          curl -fsSL --retry 3 "https://github.com/ta-lib/ta-lib/releases/download/v0.4.0/ta-lib-0.4.0-src.tar.gz" -o ta-lib-0.4.0-src.tar.gz || \
-          curl -fsSL --retry 3 "https://sourceforge.net/projects/ta-lib/files/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz/download" -o ta-lib-0.4.0-src.tar.gz
-          tar -xzf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr
-          make -j$(nproc)
-          sudo make install
-          sudo ldconfig
-          cd ..
-          rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+          pip install flake8 black
 
-      - name: Ensure TA-Lib Shared Object Loaded
+      - name: Run Flake8 Lint
         run: |
-          sudo ldconfig
-          echo "TA_LIBRARY_PATH=/usr/lib" >> $GITHUB_ENV
-          echo "TA_INCLUDE_PATH=/usr/include" >> $GITHUB_ENV
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest pytest-mock
-          pip install -r requirements.txt
-
-      - name: Linting check
-        run: |
-          # Stop the build if there are Python syntax errors or undefined names
+          # Periksa syntax error dan undefined names
           flake8 . --count --select=E9,F63,F7,F82 --exclude=.venv,venv,.git,__pycache__,build,dist --show-source --statistics
-          # exit-zero treats all formatting and complexity warnings
-          flake8 . --count --exit-zero --max-complexity=15 --max-line-length=127 --exclude=.venv,venv,.git,__pycache__,build,dist --statistics
+          # Warning check dengan batas line-length wajar
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --exclude=.venv,venv,.git,__pycache__,build,dist --statistics
 
-      - name: Run unit tests
-        env:
-          PYTHONPATH: .
+  test-in-docker:
+    name: Run Unit Tests (Docker Environment)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Environment File
         run: |
-          python -m pytest tests/ -v
+          cp .env.example .env
+
+      - name: Build Docker Test Image
+        run: |
+          docker compose build adaptive-trading-bot
+
+      - name: Execute Pytest Suite Inside Container
+        run: |
+          docker compose run --rm adaptive-trading-bot pytest tests/ -v

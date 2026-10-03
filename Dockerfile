@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgomp1 \
     && update-ca-certificates \
-    && wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz \
+    && (curl -fsSL --retry 3 "https://github.com/ta-lib/ta-lib/releases/download/v0.4.0/ta-lib-0.4.0-src.tar.gz" -o /tmp/ta-lib-0.4.0-src.tar.gz || \
+        curl -fsSL --retry 3 "https://sourceforge.net/projects/ta-lib/files/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz/download" -o /tmp/ta-lib-0.4.0-src.tar.gz) \
     && tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp \
     && cd /tmp/ta-lib \
     && ./configure --prefix=/usr \
@@ -41,8 +42,11 @@ RUN useradd -u 1000 -m appuser \
 
 USER appuser
 
-# Copy application source code and models
+# Copy application configuration, source code, models, and test suite
+COPY --chown=appuser:appuser pyproject.toml main.py ./
 COPY --chown=appuser:appuser src/ src/
+COPY --chown=appuser:appuser scripts/ scripts/
 COPY --chown=appuser:appuser models/ models/
+COPY --chown=appuser:appuser tests/ tests/
 
-ENTRYPOINT ["python3", "src/execution/live_bot.py"]
+CMD ["python3", "src/execution/live_bot.py"]
