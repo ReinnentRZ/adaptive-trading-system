@@ -246,7 +246,7 @@ class RegimeFunnelStrategy:
         macro_ref = float(bar["kalman_trend"]) if (getattr(self.config, "use_kalman_filter", False) and "kalman_trend" in bar) else ema_200
         single_shot_ok = (not traded_in_episode) if self.config.single_shot_per_episode else True
         gate_1 = (
-            (current_state == self.config.hmm_bullish_state_id)
+            (current_state == self.bullish_state_id)
             and (close_p > macro_ref)
             and (state_age <= self.config.state_age_max)
             and single_shot_ok

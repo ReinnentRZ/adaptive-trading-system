@@ -108,7 +108,7 @@ class LiveTradingBot:
         elif symbol:
             self.symbols = [symbol.strip().upper()]
         else:
-            self.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+            self.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
 
         self.symbol = symbol or self.symbols[0]
         self.timeframe = timeframe or os.getenv("TIMEFRAME", "1h")
@@ -148,6 +148,7 @@ class LiveTradingBot:
         self.traded_in_episodes: Dict[str, bool] = {s: False for s in self.symbols}
         self.last_state_ids: Dict[str, Optional[int]] = {s: None for s in self.symbols}
         self.state_ages: Dict[str, int] = {s: 0 for s in self.symbols}
+        self.meta_probabilities: Dict[str, float] = {s: 0.0 for s in self.symbols}
         self.completed_trades: List[Dict[str, Any]] = []
         self.is_running: bool = False
 
@@ -155,12 +156,20 @@ class LiveTradingBot:
         project_root = Path(__file__).resolve().parent.parent.parent
         self.strategies: Dict[str, RegimeFunnelStrategy] = {}
         for sym in self.symbols:
-            coin_tag = sym.split("/")[0].lower()
-            coin_hmm = project_root / "models" / f"{coin_tag}_1h_regime_hmm.joblib"
+            coin_tag = sym.split("/")[0].upper()
+            coin_hmm = project_root / "models" / f"{coin_tag.lower()}_1h_regime_hmm.joblib"
             hmm_path = str(coin_hmm) if coin_hmm.exists() else self.config.hmm_model_path
+
+            # Retrieve coin-specific bullish state id (e.g. 3 for BNB, 0 for BTC/ETH/SOL)
+            coin_bullish_id = (
+                getattr(self.config, "coin_bullish_states", {}).get(coin_tag)
+                if hasattr(self.config, "coin_bullish_states")
+                else (3 if coin_tag == "BNB" else 0)
+            )
 
             sym_cfg = RegimeFunnelConfig(
                 hmm_model_path=hmm_path,
+                hmm_bullish_state_id=coin_bullish_id,
                 use_kalman_filter=self.config.use_kalman_filter,
                 kalman_q=self.config.kalman_q,
                 kalman_r=self.config.kalman_r,
@@ -289,9 +298,11 @@ class LiveTradingBot:
                     "BTC/USDT": None,
                     "ETH/USDT": None,
                     "SOL/USDT": None,
+                    "BNB/USDT": None,
                 },
                 "max_concurrent_positions": self.max_concurrent_positions,
                 "allocation_per_trade_usd": self.allocation_per_trade_usd,
+                "meta_probabilities": {s: 0.0 for s in self.symbols},
                 "trade_history": [],
             }
             # Ensure all active configured symbols have entries
@@ -307,6 +318,7 @@ class LiveTradingBot:
             self.traded_in_episodes = {s: False for s in self.symbols}
             self.last_state_ids = {s: None for s in self.symbols}
             self.state_ages = {s: 0 for s in self.symbols}
+            self.meta_probabilities = {s: 0.0 for s in self.symbols}
             self.completed_trades = []
             logger.info(f"Initialized new persistent state ledger at {self.state_file}")
         except Exception as err:
@@ -376,6 +388,22 @@ class LiveTradingBot:
             elif "traded_in_current_episode" in data:
                 self.traded_in_episodes[self.symbol] = data["traded_in_current_episode"]
 
+            # Ensure all configured symbols have entries in operational state
+            self.meta_probabilities = data.get("meta_probabilities", {s: 0.0 for s in self.symbols})
+            for s in self.symbols:
+                if s not in self.active_positions:
+                    self.active_positions[s] = None
+                if s not in self.pending_orders:
+                    self.pending_orders[s] = None
+                if s not in self.traded_in_episodes:
+                    self.traded_in_episodes[s] = False
+                if s not in self.last_state_ids:
+                    self.last_state_ids[s] = None
+                if s not in self.state_ages:
+                    self.state_ages[s] = 0
+                if s not in self.meta_probabilities:
+                    self.meta_probabilities[s] = 0.0
+
             self.completed_trades = data.get("trade_history", data.get("completed_trades", []))
             logger.info(f"[State] Loaded persistent state successfully (History: {len(self.completed_trades)} trades).")
         except Exception as e:
@@ -394,6 +422,7 @@ class LiveTradingBot:
                 "is_testnet": self.is_testnet,
                 "max_concurrent_positions": self.max_concurrent_positions,
                 "allocation_per_trade_usd": self.allocation_per_trade_usd,
+                "meta_probabilities": self.meta_probabilities,
                 "active_positions": {
                     s: asdict(pos) if pos else None for s, pos in self.active_positions.items()
                 },
@@ -812,6 +841,7 @@ class LiveTradingBot:
 
                 self.last_state_ids[sym] = eval_res["current_state"]
                 self.state_ages[sym] = eval_res["state_age"]
+                self.meta_probabilities[sym] = float(eval_res.get("meta_prob", 0.0))
 
                 # Process order logic if signal passed
                 if eval_res["signal_passed"]:

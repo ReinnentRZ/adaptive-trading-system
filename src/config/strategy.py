@@ -70,6 +70,21 @@ class AdaptiveBracketParams:
     corr_tp1_ratio: float = _get_env_float("CORR_TP1_RATIO", 0.50)  # 50:50
 
 
+COIN_BULLISH_STATES: dict[str, int] = {
+    "BTC": 0,
+    "ETH": 0,
+    "SOL": 0,
+    "BNB": 3,
+}
+
+COIN_HMM_MODELS: dict[str, str] = {
+    "BTC": "models/btc_1h_regime_hmm.joblib",
+    "ETH": "models/eth_1h_regime_hmm.joblib",
+    "SOL": "models/sol_1h_regime_hmm.joblib",
+    "BNB": "models/bnb_1h_regime_hmm.joblib",
+}
+
+
 @dataclass
 class RegimeFunnelConfig:
     """
@@ -79,6 +94,14 @@ class RegimeFunnelConfig:
     # Pilar 1: Macro Gate
     hmm_model_path: str = _get_env_str("HMM_MODEL_PATH", "models/btc_1h_regime_hmm.joblib")
     hmm_bullish_state_id: int = _get_env_int("HMM_BULLISH_STATE_ID", 0)
+    coin_bullish_states: dict[str, int] = field(
+        default_factory=lambda: {
+            "BTC": 0,
+            "ETH": 0,
+            "SOL": 0,
+            "BNB": 3,
+        }
+    )
     state_age_max: int = _get_env_int("STATE_AGE_MAX", 4)
     ema_trend_period: int = _get_env_int("EMA_TREND_PERIOD", 200)
     single_shot_per_episode: bool = _get_env_bool("SINGLE_SHOT_PER_EPISODE", True)

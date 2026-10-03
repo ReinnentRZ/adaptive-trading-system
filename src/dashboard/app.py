@@ -103,7 +103,7 @@ def load_state() -> Dict[str, Any]:
     state_file = get_state_file_path()
     fallback = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+        "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"],
         "symbol": "BTC/USDT",
         "timeframe": "1h",
         "is_testnet": True,
@@ -113,14 +113,17 @@ def load_state() -> Dict[str, Any]:
             "BTC/USDT": None,
             "ETH/USDT": None,
             "SOL/USDT": None,
+            "BNB/USDT": None,
         },
         "pending_orders": {
             "BTC/USDT": None,
             "ETH/USDT": None,
             "SOL/USDT": None,
+            "BNB/USDT": None,
         },
-        "last_state_ids": {"BTC/USDT": None, "ETH/USDT": None, "SOL/USDT": None},
-        "state_ages": {"BTC/USDT": 0, "ETH/USDT": 0, "SOL/USDT": 0},
+        "last_state_ids": {"BTC/USDT": None, "ETH/USDT": None, "SOL/USDT": None, "BNB/USDT": None},
+        "state_ages": {"BTC/USDT": 0, "ETH/USDT": 0, "SOL/USDT": 0, "BNB/USDT": 0},
+        "meta_probabilities": {"BTC/USDT": 0.0, "ETH/USDT": 0.0, "SOL/USDT": 0.0, "BNB/USDT": 0.0},
         "trade_history": [],
         "completed_trades": [],
     }
@@ -200,7 +203,7 @@ with st.sidebar:
 
 # Load current bot state
 state_data = load_state()
-configured_symbols = state_data.get("symbols", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+configured_symbols = state_data.get("symbols", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"])
 active_positions = state_data.get("active_positions", {})
 pending_orders = state_data.get("pending_orders", {})
 last_state_ids = state_data.get("last_state_ids", {})
@@ -400,6 +403,44 @@ for idx, sym in enumerate(configured_symbols):
                 st.markdown(f"• **HMM State**: `{state_desc}` (Age: `{st_age}` bars)")
                 st.markdown("• **Gate Condition**: Waiting for Bullish Causal Setup")
                 st.markdown("• **Pilar 3 Allocation**: Available ($100.00 ready)")
+
+
+
+# ==============================================================================
+# SECTION 1.5: LAYER-2 AI META-LABELER RADAR
+# ==============================================================================
+st.markdown("---")
+st.subheader("🤖 Layer-2 AI Meta-Labeler Radar ($P(\\text{Win})$ Probability)")
+
+meta_probs = state_data.get("meta_probabilities", {})
+radar_cols = st.columns(len(configured_symbols))
+
+for idx, sym in enumerate(configured_symbols):
+    with radar_cols[idx]:
+        with st.container(border=True):
+            st.markdown(f"#### {sym}")
+            prob = float(meta_probs.get(sym, 0.0))
+            is_approved = prob >= 0.50
+            status_text = "APPROVED" if is_approved else "FILTERED"
+            badge_class = "badge-pass" if is_approved else "badge-fail"
+
+            st.markdown(
+                f"<div style='margin-bottom: 8px;'>"
+                f"Prob: <span class='price-val' style='font-size: 1.1rem;'>{prob * 100:.1f}%</span> | "
+                f"<span class='{badge_class}'>● {status_text}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Visual progress gauge with threshold marker at 50%
+            st.progress(min(1.0, max(0.0, prob)), text=f"P(Win): {prob:.2f} (Threshold: 0.50)")
+
+            st_id = last_state_ids.get(sym)
+            target_st = 3 if "BNB" in sym else 0
+            is_bull = (st_id == target_st) if st_id is not None else False
+            st_text = f"State {st_id}" if st_id is not None else "Scanning"
+            regime_label = "Bullish Target" if is_bull else "Neutral / Bear"
+            st.caption(f"HMM: `{st_text}` ({regime_label})")
 
 
 # ==============================================================================
