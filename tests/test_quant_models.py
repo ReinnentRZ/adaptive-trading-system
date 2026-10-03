@@ -4,9 +4,8 @@ Unit Tests for Quantitative Models: Adaptive Kalman Filter and GARCH(1,1) Volati
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from src.config.strategy import AdaptiveBracketParams, RegimeFunnelConfig
+from src.config.strategy import RegimeFunnelConfig
 from src.strategies.quant_models import (
     GarchForecastResult,
     KalmanTrendResult,

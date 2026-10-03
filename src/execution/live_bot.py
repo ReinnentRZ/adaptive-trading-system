@@ -23,7 +23,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Auto-bootstrap into .venv if current interpreter is running outside of it
 _project_root = Path(__file__).resolve().parent.parent.parent
@@ -114,11 +114,30 @@ class LiveTradingBot:
         self.timeframe = timeframe or os.getenv("TIMEFRAME", "1h")
         self.state_file = Path(state_file or os.getenv("STATE_FILE", "data/live_bot_state.json"))
         
-        testnet_env = os.getenv("IS_TESTNET", "true").lower() in ("true", "1", "yes")
+        # Flexible env parsing supporting BINANCE_SANDBOX and legacy IS_TESTNET
+        testnet_raw = os.getenv("BINANCE_SANDBOX", os.getenv("IS_TESTNET", "true"))
+        testnet_env = testnet_raw.lower() in ("true", "1", "yes", "on")
         self.is_testnet = is_testnet if is_testnet is not None else testnet_env
 
-        self.max_concurrent_positions: int = int(getattr(self.config, "max_concurrent_positions", 3))
-        self.allocation_per_trade_usd: float = float(getattr(self.config, "trade_allocation", 100.0))
+        # Flexible env parsing supporting MAX_POSITIONS and legacy MAX_CONCURRENT_POSITIONS
+        env_max_pos = os.getenv("MAX_POSITIONS", os.getenv("MAX_CONCURRENT_POSITIONS"))
+        if env_max_pos is not None and env_max_pos.strip():
+            try:
+                self.max_concurrent_positions = int(env_max_pos.strip())
+            except ValueError:
+                self.max_concurrent_positions = int(getattr(self.config, "max_concurrent_positions", 3))
+        else:
+            self.max_concurrent_positions = int(getattr(self.config, "max_concurrent_positions", 3))
+
+        # Flexible env parsing for trade allocation
+        env_trade_alloc = os.getenv("TRADE_ALLOCATION")
+        if env_trade_alloc is not None and env_trade_alloc.strip():
+            try:
+                self.allocation_per_trade_usd = float(env_trade_alloc.strip())
+            except ValueError:
+                self.allocation_per_trade_usd = float(getattr(self.config, "trade_allocation", 100.0))
+        else:
+            self.allocation_per_trade_usd = float(getattr(self.config, "trade_allocation", 100.0))
 
         # CCXT Exchange Client initialization
         self.exchange = exchange or self._init_exchange()
@@ -238,7 +257,7 @@ class LiveTradingBot:
     def _init_exchange(self) -> ccxt.binance:
         """Initializes ccxt.binance exchange client with rate-limiting and credentials."""
         api_key = os.getenv("BINANCE_API_KEY", "")
-        secret_key = os.getenv("BINANCE_SECRET_KEY", "")
+        secret_key = os.getenv("BINANCE_API_SECRET", os.getenv("BINANCE_SECRET_KEY", ""))
 
         exchange = ccxt.binance(
             {
@@ -261,15 +280,66 @@ class LiveTradingBot:
 
         return exchange
 
+    def _bootstrap_default_state(self) -> None:
+        """Initializes default persistent state ledger file and in-memory structures."""
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            default_payload = {
+                "active_positions": {
+                    "BTC/USDT": None,
+                    "ETH/USDT": None,
+                    "SOL/USDT": None,
+                },
+                "max_concurrent_positions": self.max_concurrent_positions,
+                "allocation_per_trade_usd": self.allocation_per_trade_usd,
+                "trade_history": [],
+            }
+            # Ensure all active configured symbols have entries
+            for s in self.symbols:
+                if s not in default_payload["active_positions"]:
+                    default_payload["active_positions"][s] = None
+
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump(default_payload, f, indent=2)
+
+            self.active_positions = {s: None for s in self.symbols}
+            self.pending_orders = {s: None for s in self.symbols}
+            self.traded_in_episodes = {s: False for s in self.symbols}
+            self.last_state_ids = {s: None for s in self.symbols}
+            self.state_ages = {s: 0 for s in self.symbols}
+            self.completed_trades = []
+            logger.info(f"Initialized new persistent state ledger at {self.state_file}")
+        except Exception as err:
+            logger.error(f"[State] Failed to initialize default state at {self.state_file}: {err}")
+
     def load_state(self) -> None:
-        """Loads bot state from disk to maintain continuity across restarts."""
+        """
+        Loads bot state from disk to maintain continuity across restarts.
+        Implements self-healing auto-bootstrapping: if state file does not exist
+        or is empty/invalid, automatically initializes directory and template ledger.
+        """
+        is_missing_or_empty = False
         if not self.state_file.exists():
-            logger.info(f"[State] No previous state found at {self.state_file}. Starting fresh.")
+            is_missing_or_empty = True
+        else:
+            try:
+                if self.state_file.stat().st_size == 0:
+                    is_missing_or_empty = True
+            except OSError:
+                is_missing_or_empty = True
+
+        if is_missing_or_empty:
+            self._bootstrap_default_state()
             return
 
         try:
             with open(self.state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            if not isinstance(data, dict):
+                logger.warning(f"[State] Corrupted state format in {self.state_file}. Re-bootstrapping default ledger...")
+                self._bootstrap_default_state()
+                return
 
             if "active_positions" in data and isinstance(data["active_positions"], dict):
                 for s, p_data in data["active_positions"].items():
@@ -306,10 +376,11 @@ class LiveTradingBot:
             elif "traded_in_current_episode" in data:
                 self.traded_in_episodes[self.symbol] = data["traded_in_current_episode"]
 
-            self.completed_trades = data.get("completed_trades", [])
+            self.completed_trades = data.get("trade_history", data.get("completed_trades", []))
             logger.info(f"[State] Loaded persistent state successfully (History: {len(self.completed_trades)} trades).")
         except Exception as e:
-            logger.error(f"[State] Failed to load state from {self.state_file}: {e}")
+            logger.error(f"[State] Failed to load state from {self.state_file}: {e}. Self-healing ledger...")
+            self._bootstrap_default_state()
 
     def save_state(self) -> None:
         """Persists bot state, active positions, and completed trade ledger."""
@@ -337,6 +408,7 @@ class LiveTradingBot:
                 "last_state_id": self.last_state_id,
                 "state_ages": self.state_ages,
                 "state_age": self.state_age,
+                "trade_history": self.completed_trades[-100:],
                 "completed_trades": self.completed_trades[-100:],  # Store recent 100
             }
 

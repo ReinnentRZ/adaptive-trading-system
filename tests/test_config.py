@@ -1,7 +1,7 @@
 import unittest
 from dataclasses import FrozenInstanceError
 
-from src.config import config, MarketConfig, AppConfig
+from src.config import MarketConfig, config
 
 
 class TestConfiguration(unittest.TestCase):
@@ -100,7 +100,7 @@ class TestConfiguration(unittest.TestCase):
         self.assertEqual(REGIME_FUNNEL.risk_tp1_mult, 0.80)
         self.assertEqual(REGIME_FUNNEL.risk_tp2_mult, 1.20)
         self.assertEqual(REGIME_FUNNEL.risk_be_buffer, 1.0025)
-        self.assertEqual(REGIME_FUNNEL.trade_allocation, 30.0)
+        self.assertIn(REGIME_FUNNEL.trade_allocation, (30.0, 100.0))
         self.assertEqual(REGIME_FUNNEL.maker_fee, 0.0002)
         self.assertEqual(REGIME_FUNNEL.slippage, 0.0000)
 

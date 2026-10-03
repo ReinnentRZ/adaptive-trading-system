@@ -16,3 +16,32 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  trading-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: adaptive-trading-dashboard
+    entrypoint:
+      - "streamlit"
+      - "run"
+      - "src/dashboard/app.py"
+      - "--server.port=8501"
+      - "--server.address=0.0.0.0"
+      - "--server.headless=true"
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
+      - ./logs:/app/logs:ro
+    restart: unless-stopped
+    depends_on:
+      - adaptive-trading-bot
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

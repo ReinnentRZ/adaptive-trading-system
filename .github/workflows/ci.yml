@@ -21,27 +21,18 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Cache TA-Lib C-library
-        id: cache-talib
-        uses: actions/cache@v4
-        with:
-          path: /tmp/ta-lib-build
-          key: ${{ runner.os }}-ta-lib-0.4.0
-
-      - name: Install TA-Lib C-library
-        if: steps.cache-talib.outputs.cache-hit != 'true'
+      - name: Install System Dependencies & TA-Lib C-Library
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential wget
           wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz
           tar -xzf /tmp/ta-lib-0.4.0-src.tar.gz -C /tmp
           cd /tmp/ta-lib
-          ./configure --prefix=/tmp/ta-lib-build
-          make
-          make install
-
-      - name: Install TA-Lib C-library to Runner System
-        run: |
-          sudo cp -r /tmp/ta-lib-build/include/* /usr/include/
-          sudo cp -r /tmp/ta-lib-build/lib/* /usr/lib/
+          ./configure --prefix=/usr
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          rm -rf /tmp/ta-lib*
 
       - name: Install Python dependencies
         run: |
@@ -52,12 +43,12 @@ jobs:
       - name: Linting check
         run: |
           # Stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 . --count --select=E9,F63,F7,F82 --exclude=.venv,venv,.git,__pycache__,build,dist --show-source --statistics
+          # exit-zero treats all formatting and complexity warnings
+          flake8 . --count --exit-zero --max-complexity=15 --max-line-length=127 --exclude=.venv,venv,.git,__pycache__,build,dist --statistics
 
       - name: Run unit tests
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest tests/
+          python -m pytest tests/ -v

@@ -4,7 +4,6 @@ Unit tests for RegimeFunnelStrategy (Single Source of Truth 3-Pilar Engine).
 
 from __future__ import annotations
 
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
@@ -256,4 +255,3 @@ def test_regime_funnel_calculate_adaptive_brackets():
     assert res_side["tp2_price"] == pytest.approx(entry + 0.90 * atr)
     assert res_side["tp1_ratio"] == pytest.approx(0.70)
     assert res_side["tp2_ratio"] == pytest.approx(0.30)
-

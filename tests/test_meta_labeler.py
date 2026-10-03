@@ -4,7 +4,6 @@ Unit Tests for Layer-2 AI Meta-Labeling Decider (LightGBM Gate).
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.config.strategy import RegimeFunnelConfig
 from src.strategies.meta_labeler import MetaLabelResult, MetaLabelingGate
