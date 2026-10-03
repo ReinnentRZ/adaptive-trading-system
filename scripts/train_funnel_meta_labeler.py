@@ -45,6 +45,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config.strategy import AdaptiveBracketParams, RegimeFunnelConfig
 from src.strategies.meta_labeler import (
     DEFAULT_FEATURE_COLUMNS,
+    MULTI_ASSET_FEATURE_COLUMNS,
     MetaLabelingGate,
     PurgedTimeSeriesSplit,
 )
@@ -61,11 +62,13 @@ logger = logging.getLogger("FunnelMetaTrainer")
 class FunnelMetaLabelingTrainer:
     """
     End-to-end Trainer & Calibrator for the 1H Corong 3 Pilar Meta-Labeler.
+    Supports single-asset or pooled multi-asset training (BTC, ETH, SOL).
     """
 
     def __init__(
         self,
         coin: str = "btc",
+        coins: Optional[Sequence[str]] = None,
         timeframe: str = "1h",
         processed_dir: Path = Path("dataset/processed"),
         models_dir: Path = Path("models"),
@@ -80,6 +83,8 @@ class FunnelMetaLabelingTrainer:
         random_state: int = 42,
     ) -> None:
         self.coin = coin.lower()
+        self.coins = [c.lower() for c in coins] if coins else [self.coin]
+        self.is_multi_asset = len(self.coins) > 1
         self.timeframe = timeframe.lower()
         self.processed_dir = Path(processed_dir)
         self.models_dir = Path(models_dir)
@@ -92,64 +97,90 @@ class FunnelMetaLabelingTrainer:
         self.cv_mode = cv_mode.lower()
         self.random_state = random_state
 
+        if self.is_multi_asset:
+            self.feature_columns = list(MULTI_ASSET_FEATURE_COLUMNS)
+        else:
+            self.feature_columns = list(DEFAULT_FEATURE_COLUMNS)
+
         self.models_dir.mkdir(parents=True, exist_ok=True)
         if output_model_path:
             self.output_model_path = Path(output_model_path)
+        elif self.is_multi_asset:
+            self.output_model_path = self.models_dir / f"multi_asset_{self.timeframe}_funnel_metalabeler.joblib"
         else:
             self.output_model_path = self.models_dir / f"{self.coin}_{self.timeframe}_funnel_metalabeler.joblib"
 
-    def load_and_prepare_dataset(self) -> pd.DataFrame:
-        """Loads continuous OHLCV dataset and computes Pilar 1 & 2 indicators."""
-        data_path = self.processed_dir / self.coin / self.timeframe / f"{self.coin}_{self.timeframe}_continuous.parquet"
+    def _load_raw_df(self, coin: str) -> pd.DataFrame:
+        """Loads continuous OHLCV dataset for a given coin."""
+        data_path = self.processed_dir / coin / self.timeframe / f"{coin}_{self.timeframe}_continuous.parquet"
         if not data_path.exists():
-            data_path = self.processed_dir / f"{self.coin}_{self.timeframe}_continuous.parquet"
+            data_path = self.processed_dir / f"{coin}_{self.timeframe}_continuous.parquet"
         if not data_path.exists():
             raise FileNotFoundError(f"Continuous dataset not found at: {data_path}")
 
-        logger.info(f"Loading dataset from: {data_path}")
+        logger.info(f"[{coin.upper()}] Loading dataset from: {data_path}")
         df = pd.read_parquet(data_path)
         if "datetime" in df.columns:
             df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
             df.sort_values(by="datetime", ascending=True, inplace=True)
             df.reset_index(drop=True, inplace=True)
+        return df
 
-        hmm_model_path = self.models_dir / f"{self.coin}_{self.timeframe}_regime_hmm.joblib"
+    def prepare_dataset_for_coin(
+        self, coin: str, btc_df: Optional[pd.DataFrame] = None
+    ) -> Tuple[pd.DataFrame, RegimeFunnelStrategy, RegimeFunnelConfig]:
+        """Prepares strategy indicators, HMM states, and features for a coin."""
+        df = self._load_raw_df(coin)
+
+        hmm_model_path = self.models_dir / f"{coin}_{self.timeframe}_regime_hmm.joblib"
         if not hmm_model_path.exists():
-            hmm_model_path = self.models_dir / f"{self.coin}_{self.timeframe}_regime_model.joblib"
+            hmm_model_path = self.models_dir / f"{coin}_{self.timeframe}_regime_model.joblib"
+        if not hmm_model_path.exists():
+            hmm_model_path = self.models_dir / "btc_1h_regime_hmm.joblib"
 
         cfg = RegimeFunnelConfig(
             hmm_model_path=str(hmm_model_path),
             use_kalman_filter=self.use_kalman,
             use_volume_filter=False,
             single_shot_per_episode=self.single_shot,
+            use_meta_labeler=False,
         )
         strategy = RegimeFunnelStrategy(cfg)
 
-        logger.info(f"Computing Strategy Indicators (Kalman={self.use_kalman})...")
+        logger.info(f"[{coin.upper()}] Computing Strategy Indicators (Kalman={self.use_kalman})...")
         df_ind = strategy.compute_indicators(df)
         df_ind.dropna(subset=strategy.feature_columns + ["atr", "ema_9", "rsi_14", "ema_200"], inplace=True)
         df_ind.reset_index(drop=True, inplace=True)
 
-        # Slice after warm-up
-        df_test = df_ind.iloc[200:].copy().reset_index(drop=True)
+        # Extract features (including cross-asset btc_return_1h and relative_strength_vs_btc) on full series before slicing
+        logger.info(f"[{coin.upper()}] Extracting Microstructure & Cross-Asset Features...")
+        df_features = MetaLabelingGate.extract_features(df_ind, btc_df=btc_df)
+        df_features["coin"] = coin
+
+        # Slice after 200-bar warm-up
+        df_test = df_features.iloc[200:].copy().reset_index(drop=True)
         causal_states, _ = strategy.compute_causal_states(df_test)
         df_test["regime_state"] = causal_states
 
-        # Extract 8 Meta-Labeling Features
-        logger.info("Extracting 8 Layer-2 Microstructure Features...")
-        gate = MetaLabelingGate(coin=self.coin, timeframe=self.timeframe)
-        df_features = gate.extract_features(df_test)
+        return df_test, strategy, cfg
 
-        self.strategy = strategy
-        self.config = cfg
-        return df_features
-
-    def extract_candidates_and_labels(self, df: pd.DataFrame) -> pd.DataFrame:
+    def extract_candidates_and_labels(
+        self,
+        df: pd.DataFrame,
+        strategy: Optional[RegimeFunnelStrategy] = None,
+        config: Optional[RegimeFunnelConfig] = None,
+        coin: Optional[str] = None,
+        btc_df: Optional[pd.DataFrame] = None,
+    ) -> pd.DataFrame:
         """
         Extracts causal primary signals where Pilar 1 & Pilar 2 trigger,
         and simulates Triple Barrier / Adaptive Bracket ground truth labels.
         """
-        logger.info("Simulating Ground Truth Triple Barrier Outcomes for Primary Candidates...")
+        strat = strategy or getattr(self, "strategy", None)
+        cfg = config or getattr(self, "config", None)
+        coin_name = (coin or getattr(self, "coin", "btc")).upper()
+
+        logger.info(f"[{coin_name}] Simulating Ground Truth Triple Barrier Outcomes for Primary Candidates...")
         records: List[Dict[str, Any]] = []
         state_age = 0
         traded_in_episode = False
@@ -157,13 +188,15 @@ class FunnelMetaLabelingTrainer:
 
         for i in range(n - self.max_holding_bars - 1):
             curr_state = int(df["regime_state"].iloc[i])
-            if curr_state == self.strategy.bullish_state_id:
+            if curr_state == strat.bullish_state_id:
                 state_age += 1
             else:
                 state_age = 0
                 traded_in_episode = False
 
-            sig, details = self.strategy.evaluate_gates(df, i, curr_state, state_age, traded_in_episode)
+            sig, details = strat.evaluate_gates(
+                df, i, curr_state, state_age, traded_in_episode, btc_df=btc_df
+            )
             if not sig:
                 continue
 
@@ -186,7 +219,7 @@ class FunnelMetaLabelingTrainer:
                 df["normalized_atr"].iloc[max(0, i - 100) : i + 1].median()
             )
 
-            brackets = self.strategy.calculate_adaptive_brackets(
+            brackets = strat.calculate_adaptive_brackets(
                 entry_price=entry_price,
                 atr_val=atr_val,
                 current_close=sig_close,
@@ -194,7 +227,7 @@ class FunnelMetaLabelingTrainer:
                 rsi_val=sig_rsi,
                 natr_val=sig_natr,
                 natr_median=sig_natr_med,
-                params=self.config.adaptive_brackets,
+                params=cfg.adaptive_brackets,
             )
             tp1_price = brackets["tp1_price"]
             tp2_price = brackets["tp2_price"]
@@ -241,7 +274,7 @@ class FunnelMetaLabelingTrainer:
                     curr_qty -= tp1_qty
                     tp1_taken = True
                     # Lock Break-Even SL (+0.25% buffer)
-                    curr_sl = max(curr_sl, entry_price * self.config.risk_be_buffer)
+                    curr_sl = max(curr_sl, entry_price * cfg.risk_be_buffer)
 
                 # TP2 exit check
                 if tp1_taken and h_b >= tp2_price:
@@ -268,7 +301,8 @@ class FunnelMetaLabelingTrainer:
             # Binary Label: y = 1 if net profit > 0 (strictly covers 0.04% roundtrip fees)
             target_label = 1 if net_return > 0.0 else 0
 
-            row = {col: float(df[col].iloc[i]) for col in DEFAULT_FEATURE_COLUMNS}
+            row = {col: float(df[col].iloc[i]) if col in df.columns else 0.0 for col in self.feature_columns}
+            row["coin"] = coin_name
             row["datetime"] = df["datetime"].iloc[i]
             row["bar_idx"] = i
             row["entry_price"] = entry_price
@@ -278,21 +312,43 @@ class FunnelMetaLabelingTrainer:
             records.append(row)
 
         cand_df = pd.DataFrame(records)
-        wins = int((cand_df["target_label"] == 1).sum())
-        losses = int((cand_df["target_label"] == 0).sum())
+        wins = int((cand_df["target_label"] == 1).sum()) if len(cand_df) > 0 else 0
+        losses = int((cand_df["target_label"] == 0).sum()) if len(cand_df) > 0 else 0
         win_rate = (wins / len(cand_df) * 100.0) if len(cand_df) > 0 else 0.0
 
         logger.info(
-            f"Extracted {len(cand_df):,} Candidate Signals -> "
+            f"[{coin_name}] Extracted {len(cand_df):,} Candidate Signals -> "
             f"Ground Truth Wins: {wins:,} ({win_rate:.2f}%), Losses: {losses:,} ({100.0 - win_rate:.2f}%)"
         )
         return cand_df
+
+    def load_and_prepare_all_candidates(self) -> pd.DataFrame:
+        """Loads and prepares candidates across all configured coins (BTC, ETH, SOL)."""
+        btc_raw = self._load_raw_df("btc")
+        all_candidates: List[pd.DataFrame] = []
+
+        for c in self.coins:
+            df_feat, strat, cfg = self.prepare_dataset_for_coin(c, btc_df=btc_raw)
+            c_cand = self.extract_candidates_and_labels(
+                df=df_feat, strategy=strat, config=cfg, coin=c, btc_df=btc_raw
+            )
+            all_candidates.append(c_cand)
+
+        pooled_df = pd.concat(all_candidates, ignore_index=True)
+        if "datetime" in pooled_df.columns:
+            pooled_df.sort_values(by="datetime", ascending=True, inplace=True)
+            pooled_df.reset_index(drop=True, inplace=True)
+
+        logger.info(
+            f"=== Multi-Asset Pooling Complete: {len(pooled_df):,} total candidates across {self.coins} ==="
+        )
+        return pooled_df
 
     def train_and_calibrate(self, cand_df: pd.DataFrame) -> Dict[str, Any]:
         """
         Fits LightGBM and applies probability calibration via CalibratedClassifierCV.
         """
-        X = cand_df[DEFAULT_FEATURE_COLUMNS].to_numpy(dtype=np.float64)
+        X = cand_df[self.feature_columns].to_numpy(dtype=np.float64)
         y = cand_df["target_label"].to_numpy(dtype=np.int32)
         n = len(X)
 
@@ -354,13 +410,32 @@ class FunnelMetaLabelingTrainer:
             )
             calibrated_model.fit(X, y)
 
-        # In-sample & Out-of-fold Calibrated Probabilities
+        # Base LightGBM probabilities
+        base_lgbm.fit(X, y)
+        base_probs = base_lgbm.predict_proba(X)[:, 1]
+        base_auc = float(roc_auc_score(y, base_probs)) if len(np.unique(y)) > 1 else 0.50
+
+        # Calibrated model probabilities
         probs = calibrated_model.predict_proba(X)[:, 1]
-        brier = float(brier_score_loss(y, probs))
-        auc = float(roc_auc_score(y, probs)) if len(np.unique(y)) > 1 else 0.50
+        cal_auc = float(roc_auc_score(y, probs)) if len(np.unique(y)) > 1 else 0.50
+
+        if cal_auc < 0.50 or cal_auc < (base_auc - 0.10):
+            logger.warning(
+                f"[Calibration Safeguard] CalibratedClassifierCV degraded ROC-AUC ({cal_auc:.4f} vs base {base_auc:.4f}). "
+                f"Using native calibrated LightGBM classifier to ensure monotonically increasing win rate with threshold."
+            )
+            final_model = base_lgbm
+            probs = base_probs
+            auc = base_auc
+            brier = float(brier_score_loss(y, probs))
+        else:
+            final_model = calibrated_model
+            final_model.cv = None
+            auc = cal_auc
+            brier = float(brier_score_loss(y, probs))
 
         logger.info(
-            f"Calibration Completed -> Brier Score Loss: {brier:.4f}, ROC-AUC: {auc:.4f} "
+            f"Final Model Selected -> Brier Score Loss: {brier:.4f}, ROC-AUC: {auc:.4f} "
             f"(Probability Range: [{probs.min():.4f}, {probs.max():.4f}], Mean: {probs.mean():.4f})"
         )
 
@@ -392,15 +467,18 @@ class FunnelMetaLabelingTrainer:
             })
 
         # Save artifact cleanly without splitter object dependencies
-        calibrated_model.cv = None
-        joblib.dump(calibrated_model, self.output_model_path)
+        if hasattr(final_model, "cv"):
+            final_model.cv = None
+        joblib.dump(final_model, self.output_model_path)
         logger.info(f"Saved Calibrated Model Artifact to: {self.output_model_path}")
 
         meta_path = self.output_model_path.with_name(
             self.output_model_path.name.replace(".joblib", "_metadata.json")
         )
         metadata = {
-            "coin": self.coin,
+            "coin": "+".join(self.coins) if self.is_multi_asset else self.coin,
+            "coins": self.coins,
+            "is_multi_asset": self.is_multi_asset,
             "timeframe": self.timeframe,
             "total_candidates": n,
             "ground_truth_wins": count_1,
@@ -411,7 +489,7 @@ class FunnelMetaLabelingTrainer:
             "prob_min": round(float(probs.min()), 4),
             "prob_max": round(float(probs.max()), 4),
             "prob_mean": round(float(probs.mean()), 4),
-            "feature_columns": DEFAULT_FEATURE_COLUMNS,
+            "feature_columns": self.feature_columns,
             "threshold_evaluations": threshold_evals,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
         }
@@ -448,7 +526,8 @@ def print_training_report(metadata: Dict[str, Any]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train & Calibrate 1H Funnel Meta-Labeler")
-    parser.add_argument("--coin", type=str, default="btc", help="Trading asset (default: btc)")
+    parser.add_argument("--coin", type=str, default="btc", help="Single trading asset (default: btc)")
+    parser.add_argument("--coins", type=str, nargs="+", default=None, help="Multi-asset coins list (e.g. btc eth sol)")
     parser.add_argument("--timeframe", type=str, default="1h", help="Timeframe (default: 1h)")
     parser.add_argument("--processed-dir", type=str, default="dataset/processed", help="Path to processed datasets")
     parser.add_argument("--models-dir", type=str, default="models", help="Path to models directory")
@@ -467,6 +546,7 @@ def main() -> None:
     args = parse_args()
     trainer = FunnelMetaLabelingTrainer(
         coin=args.coin,
+        coins=args.coins,
         timeframe=args.timeframe,
         processed_dir=Path(args.processed_dir),
         models_dir=Path(args.models_dir),
@@ -478,8 +558,14 @@ def main() -> None:
         cv_mode=args.cv_mode,
         output_model_path=Path(args.output_model) if args.output_model else None,
     )
-    df = trainer.load_and_prepare_dataset()
-    cand_df = trainer.extract_candidates_and_labels(df)
+    if trainer.is_multi_asset:
+        cand_df = trainer.load_and_prepare_all_candidates()
+    else:
+        df_feat, strat, cfg = trainer.prepare_dataset_for_coin(trainer.coin)
+        trainer.strategy = strat
+        trainer.config = cfg
+        cand_df = trainer.extract_candidates_and_labels(df_feat)
+
     meta = trainer.train_and_calibrate(cand_df)
     print_training_report(meta)
 

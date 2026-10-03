@@ -1,0 +1,93 @@
+{
+  "coin": "btc+eth+sol",
+  "coins": [
+    "btc",
+    "eth",
+    "sol"
+  ],
+  "is_multi_asset": true,
+  "timeframe": "1h",
+  "total_candidates": 1622,
+  "ground_truth_wins": 700,
+  "ground_truth_losses": 922,
+  "baseline_win_rate_pct": 43.16,
+  "brier_score_loss": 0.2205,
+  "roc_auc": 0.76,
+  "prob_min": 0.2121,
+  "prob_max": 0.8013,
+  "prob_mean": 0.4919,
+  "feature_columns": [
+    "rsi",
+    "cci",
+    "adx",
+    "wt_diff",
+    "volatility_ratio",
+    "normalized_atr",
+    "lorentzian_signal",
+    "btc_return_1h",
+    "relative_strength_vs_btc"
+  ],
+  "threshold_evaluations": [
+    {
+      "threshold": 0.4,
+      "approved_trades": 1461,
+      "approval_pct": 90.07,
+      "win_rate_pct": 47.09,
+      "baseline_win_rate": 43.16,
+      "precision": 0.4709,
+      "recall": 0.9829,
+      "f1": 0.6367
+    },
+    {
+      "threshold": 0.45,
+      "approved_trades": 1176,
+      "approval_pct": 72.5,
+      "win_rate_pct": 52.64,
+      "baseline_win_rate": 43.16,
+      "precision": 0.5264,
+      "recall": 0.8843,
+      "f1": 0.6599
+    },
+    {
+      "threshold": 0.48,
+      "approved_trades": 985,
+      "approval_pct": 60.73,
+      "win_rate_pct": 57.97,
+      "baseline_win_rate": 43.16,
+      "precision": 0.5797,
+      "recall": 0.8157,
+      "f1": 0.6777
+    },
+    {
+      "threshold": 0.5,
+      "approved_trades": 757,
+      "approval_pct": 46.67,
+      "win_rate_pct": 62.88,
+      "baseline_win_rate": 43.16,
+      "precision": 0.6288,
+      "recall": 0.68,
+      "f1": 0.6534
+    },
+    {
+      "threshold": 0.52,
+      "approved_trades": 486,
+      "approval_pct": 29.96,
+      "win_rate_pct": 69.96,
+      "baseline_win_rate": 43.16,
+      "precision": 0.6996,
+      "recall": 0.4857,
+      "f1": 0.5734
+    },
+    {
+      "threshold": 0.55,
+      "approved_trades": 282,
+      "approval_pct": 17.39,
+      "win_rate_pct": 79.08,
+      "baseline_win_rate": 43.16,
+      "precision": 0.7908,
+      "recall": 0.3186,
+      "f1": 0.4542
+    }
+  ],
+  "created_at": "2026-10-03 04:38:02 UTC"
+}

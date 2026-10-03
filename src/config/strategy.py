@@ -112,11 +112,12 @@ class RegimeFunnelConfig:
     # Layer-2 AI Meta-Labeling Decider (LightGBM)
     use_meta_labeler: bool = _get_env_bool("USE_META_LABELER", True)  # Toggle AI Decider
     meta_label_threshold: float = _get_env_float("META_LABEL_THRESHOLD", 0.50)
-    meta_model_path: str = _get_env_str("META_MODEL_PATH", "models/btc_1h_funnel_metalabeler.joblib")
+    meta_model_path: str = _get_env_str("META_MODEL_PATH", "models/multi_asset_1h_funnel_metalabeler.joblib")
 
     # Execution & Fees (Maker Tier)
-    capital_total: float = _get_env_float("CAPITAL_TOTAL", 100.0)
-    trade_allocation: float = _get_env_float("TRADE_ALLOCATION", 30.0)
+    capital_total: float = _get_env_float("CAPITAL_TOTAL", 387.50)
+    trade_allocation: float = _get_env_float("TRADE_ALLOCATION", 100.0)
+    max_concurrent_positions: int = _get_env_int("MAX_CONCURRENT_POSITIONS", 3)
     maker_fee: float = _get_env_float("MAKER_FEE", 0.0002)        # 0.02% per sisi (0.04% round-trip)
     slippage: float = _get_env_float("SLIPPAGE", 0.0000)         # 0.0% limit order
 

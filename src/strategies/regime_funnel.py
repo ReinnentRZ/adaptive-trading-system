@@ -221,7 +221,8 @@ class RegimeFunnelStrategy:
         current_state: int,
         state_age: int,
         traded_in_episode: bool,
-    ) -> Tuple[bool, Dict[str, bool]]:
+        btc_df: Optional[pd.DataFrame] = None,
+    ) -> Tuple[bool, Dict[str, Any]]:
         """
         Evaluates Cascading Corong gates:
           - Pilar 1 (Macro Gate):
@@ -266,14 +267,9 @@ class RegimeFunnelStrategy:
 
         # Layer-2 AI Meta-Labeling Decider (LightGBM Supreme Court)
         if getattr(self.config, "use_meta_labeler", False) and self.meta_gate is not None:
-            # Only evaluate AI gate if preliminary quantitative gates passed
-            if gate_1 and gate_2 and gate_vol:
-                meta_res = self.meta_gate.evaluate(df, idx)
-                gate_meta = bool(meta_res.is_approved)
-                meta_prob = float(meta_res.prob_win)
-            else:
-                gate_meta = False
-                meta_prob = 0.0
+            meta_res = self.meta_gate.evaluate(df, idx, btc_df=btc_df)
+            gate_meta = bool(meta_res.is_approved)
+            meta_prob = float(meta_res.prob_win)
         else:
             gate_meta = True
             meta_prob = 1.0

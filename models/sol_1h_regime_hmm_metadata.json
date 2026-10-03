@@ -1,0 +1,93 @@
+{
+    "coin": "sol",
+    "timeframe": "1h",
+    "model_type": "hmm",
+    "n_components": 4,
+    "feature_columns": [
+        "log_return",
+        "signed_volume",
+        "volatility"
+    ],
+    "train_samples": 7667,
+    "total_samples": 10954,
+    "bullish_state_id": 0,
+    "bearish_state_id": 3,
+    "sideways_state_id": 1,
+    "transition_matrix": [
+        [
+            0.935493598312945,
+            0.027577107297747525,
+            0.008961520487797603,
+            0.02796777390150987
+        ],
+        [
+            0.013376813794951625,
+            0.9585818349496283,
+            0.0,
+            0.028041351255420052
+        ],
+        [
+            0.03784429564776789,
+            0.0,
+            0.9314035048073018,
+            0.030752199544930223
+        ],
+        [
+            0.014090289022420977,
+            0.006311495523481511,
+            0.08277467163931734,
+            0.8968235438147801
+        ]
+    ],
+    "state_profiles": [
+        {
+            "state_id": 0,
+            "mean_return_pct": 0.015837499061352588,
+            "mean_signed_volume": 0.01012105178394656,
+            "mean_volume_zscore": -0.12915128151732974,
+            "mean_volatility_pct": 0.9504918433247004,
+            "candle_count": 2611,
+            "distribution_pct": 23.836041628628813,
+            "expected_duration_bars": 15.502337347095855,
+            "self_transition_prob": 0.935493598312945,
+            "interpretation": "Bullish Momentum (Upward Expansion)"
+        },
+        {
+            "state_id": 1,
+            "mean_return_pct": -0.007168771427527657,
+            "mean_signed_volume": -0.03770473430400388,
+            "mean_volume_zscore": -0.22639428773928238,
+            "mean_volatility_pct": 0.6608714422760935,
+            "candle_count": 3397,
+            "distribution_pct": 31.011502647434725,
+            "expected_duration_bars": 24.14399572708803,
+            "self_transition_prob": 0.9585818349496283,
+            "interpretation": "Low-Volatility Sideways (Consolidation)"
+        },
+        {
+            "state_id": 2,
+            "mean_return_pct": 0.005100907516735479,
+            "mean_signed_volume": -0.017561110568150212,
+            "mean_volume_zscore": -0.18250176265822793,
+            "mean_volatility_pct": 1.2061210291085442,
+            "candle_count": 2694,
+            "distribution_pct": 24.59375570567829,
+            "expected_duration_bars": 14.578004272533827,
+            "self_transition_prob": 0.9314035048073018,
+            "interpretation": "Moderate Volatility / Neutral Transition"
+        },
+        {
+            "state_id": 3,
+            "mean_return_pct": -0.030910885072711412,
+            "mean_signed_volume": 0.001653759122489779,
+            "mean_volume_zscore": 0.7537894468757602,
+            "mean_volatility_pct": 1.551298935972207,
+            "candle_count": 2252,
+            "distribution_pct": 20.55870001825817,
+            "expected_duration_bars": 9.692133622081615,
+            "self_transition_prob": 0.8968235438147801,
+            "interpretation": "High-Volatility Breakdown (Bearish Dump)"
+        }
+    ],
+    "created_at_utc": "2026-10-03 04:24:28"
+}

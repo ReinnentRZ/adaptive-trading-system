@@ -91,7 +91,7 @@ def test_regime_funnel_risk_brackets():
 
 def test_regime_funnel_evaluate_gates():
     """Verify Pilar 1 and Pilar 2 evaluation behavior."""
-    strategy = RegimeFunnelStrategy()
+    strategy = RegimeFunnelStrategy(config=RegimeFunnelConfig(use_meta_labeler=False))
 
     # Create dummy dataframe row
     df = pd.DataFrame(

@@ -82,6 +82,7 @@ class PendingOrder:
 class LiveTradingBot:
     """
     Live and Paper Trading Bot implementing the 3-Pilar Regime Corong Strategy.
+    Now upgraded to Multi-Pair Scanner (BTC/USDT, ETH/USDT, SOL/USDT) with portfolio quota.
     """
 
     def __init__(
@@ -89,6 +90,7 @@ class LiveTradingBot:
         config: Optional[RegimeFunnelConfig] = None,
         exchange: Optional[ccxt.Exchange] = None,
         symbol: Optional[str] = None,
+        symbols: Optional[Sequence[str]] = None,
         timeframe: Optional[str] = None,
         state_file: Optional[Path] = None,
         is_testnet: Optional[bool] = None,
@@ -96,30 +98,142 @@ class LiveTradingBot:
         **kwargs: Any,
     ) -> None:
         self.config: RegimeFunnelConfig = config or getattr(app_config, "regime_funnel", REGIME_FUNNEL)
-        self.strategy = RegimeFunnelStrategy(config=self.config)
 
-        # Environment configuration
-        self.symbol = symbol or os.getenv("SYMBOL", "BTC/USDT")
+        # Multi-Pair Symbols configuration
+        symbols_env = os.getenv("SYMBOLS", "")
+        if symbols:
+            self.symbols = [s.strip().upper() for s in symbols]
+        elif symbols_env:
+            self.symbols = [s.strip().upper() for s in symbols_env.split(",") if s.strip()]
+        elif symbol:
+            self.symbols = [symbol.strip().upper()]
+        else:
+            self.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+        self.symbol = symbol or self.symbols[0]
         self.timeframe = timeframe or os.getenv("TIMEFRAME", "1h")
         self.state_file = Path(state_file or os.getenv("STATE_FILE", "data/live_bot_state.json"))
         
         testnet_env = os.getenv("IS_TESTNET", "true").lower() in ("true", "1", "yes")
         self.is_testnet = is_testnet if is_testnet is not None else testnet_env
 
+        self.max_concurrent_positions: int = int(getattr(self.config, "max_concurrent_positions", 3))
+        self.allocation_per_trade_usd: float = float(getattr(self.config, "trade_allocation", 100.0))
+
         # CCXT Exchange Client initialization
         self.exchange = exchange or self._init_exchange()
 
-        # Operational state
-        self.active_position: Optional[ActivePosition] = None
-        self.pending_order: Optional[PendingOrder] = None
-        self.traded_in_current_episode: bool = False
-        self.last_state_id: Optional[int] = None
-        self.state_age: int = 0
+        # Operational state per symbol
+        self.active_positions: Dict[str, Optional[ActivePosition]] = {s: None for s in self.symbols}
+        self.pending_orders: Dict[str, Optional[PendingOrder]] = {s: None for s in self.symbols}
+        self.traded_in_episodes: Dict[str, bool] = {s: False for s in self.symbols}
+        self.last_state_ids: Dict[str, Optional[int]] = {s: None for s in self.symbols}
+        self.state_ages: Dict[str, int] = {s: 0 for s in self.symbols}
         self.completed_trades: List[Dict[str, Any]] = []
         self.is_running: bool = False
 
+        # Build Strategy instances per symbol (with coin-specific HMM and shared multi-asset meta-labeler)
+        project_root = Path(__file__).resolve().parent.parent.parent
+        self.strategies: Dict[str, RegimeFunnelStrategy] = {}
+        for sym in self.symbols:
+            coin_tag = sym.split("/")[0].lower()
+            coin_hmm = project_root / "models" / f"{coin_tag}_1h_regime_hmm.joblib"
+            hmm_path = str(coin_hmm) if coin_hmm.exists() else self.config.hmm_model_path
+
+            sym_cfg = RegimeFunnelConfig(
+                hmm_model_path=hmm_path,
+                use_kalman_filter=self.config.use_kalman_filter,
+                kalman_q=self.config.kalman_q,
+                kalman_r=self.config.kalman_r,
+                use_volume_filter=self.config.use_volume_filter,
+                volume_filter_mult=self.config.volume_filter_mult,
+                single_shot_per_episode=self.config.single_shot_per_episode,
+                use_meta_labeler=self.config.use_meta_labeler,
+                meta_label_threshold=self.config.meta_label_threshold,
+                meta_model_path=self.config.meta_model_path,
+                trade_allocation=self.allocation_per_trade_usd,
+                max_concurrent_positions=self.max_concurrent_positions,
+            )
+            self.strategies[sym] = RegimeFunnelStrategy(config=sym_cfg)
+
         # Load persisted state if exists
         self.load_state()
+
+        # Log Multi-Pair Scanner and AI Meta-Labeling Decider initialization status at startup
+        meta_status_logged = False
+        for sym, strat in self.strategies.items():
+            if getattr(strat.config, "use_meta_labeler", False) and not meta_status_logged:
+                if strat.meta_gate is not None and strat.meta_gate.model is not None:
+                    m_name = (
+                        strat.meta_gate.resolved_model_path.name
+                        if strat.meta_gate.resolved_model_path
+                        else "LightGBM"
+                    )
+                    logger.info(
+                        f"[Startup] Layer-2 AI Meta-Labeling Gate INITIALIZED! "
+                        f"Model='{m_name}', Threshold={strat.config.meta_label_threshold:.2f}"
+                    )
+                    meta_status_logged = True
+
+        logger.info(
+            f"[Startup] Multi-Pair Scanner INITIALIZED for {self.symbols} "
+            f"(Max Concurrent Positions: {self.max_concurrent_positions}, Allocation: ${self.allocation_per_trade_usd:,.2f}/trade)"
+        )
+
+    # Backward-compatible property delegates for single-symbol test cases
+    @property
+    def strategy(self) -> RegimeFunnelStrategy:
+        return self.strategies.get(self.symbol, next(iter(self.strategies.values())))
+
+    @strategy.setter
+    def strategy(self, strat: RegimeFunnelStrategy) -> None:
+        self.strategies[self.symbol] = strat
+
+    @property
+    def active_position(self) -> Optional[ActivePosition]:
+        return self.active_positions.get(self.symbol)
+
+    @active_position.setter
+    def active_position(self, pos: Optional[ActivePosition]) -> None:
+        if pos is not None:
+            self.active_positions[pos.symbol] = pos
+        else:
+            self.active_positions[self.symbol] = None
+
+    @property
+    def pending_order(self) -> Optional[PendingOrder]:
+        return self.pending_orders.get(self.symbol)
+
+    @pending_order.setter
+    def pending_order(self, ord: Optional[PendingOrder]) -> None:
+        if ord is not None:
+            self.pending_orders[ord.symbol] = ord
+        else:
+            self.pending_orders[self.symbol] = None
+
+    @property
+    def traded_in_current_episode(self) -> bool:
+        return self.traded_in_episodes.get(self.symbol, False)
+
+    @traded_in_current_episode.setter
+    def traded_in_current_episode(self, val: bool) -> None:
+        self.traded_in_episodes[self.symbol] = val
+
+    @property
+    def last_state_id(self) -> Optional[int]:
+        return self.last_state_ids.get(self.symbol, None)
+
+    @last_state_id.setter
+    def last_state_id(self, val: Optional[int]) -> None:
+        self.last_state_ids[self.symbol] = val
+
+    @property
+    def state_age(self) -> int:
+        return self.state_ages.get(self.symbol, 0)
+
+    @state_age.setter
+    def state_age(self, val: int) -> None:
+        self.state_ages[self.symbol] = val
 
     def _init_exchange(self) -> ccxt.binance:
         """Initializes ccxt.binance exchange client with rate-limiting and credentials."""
@@ -157,19 +271,41 @@ class LiveTradingBot:
             with open(self.state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            if data.get("active_position"):
-                pos_data = data["active_position"]
-                self.active_position = ActivePosition(**pos_data)
-                logger.info(f"[State] Restored active position: {self.active_position.symbol} @ ${self.active_position.entry_price:,.2f}")
+            if "active_positions" in data and isinstance(data["active_positions"], dict):
+                for s, p_data in data["active_positions"].items():
+                    if p_data:
+                        self.active_positions[s] = ActivePosition(**p_data)
+                        logger.info(f"[State] Restored active position for {s}: @ ${self.active_positions[s].entry_price:,.2f}")
+            elif data.get("active_position"):
+                pos = ActivePosition(**data["active_position"])
+                self.active_positions[pos.symbol] = pos
+                logger.info(f"[State] Restored active position: {pos.symbol} @ ${pos.entry_price:,.2f}")
 
-            if data.get("pending_order"):
-                ord_data = data["pending_order"]
-                self.pending_order = PendingOrder(**ord_data)
-                logger.info(f"[State] Restored pending order: #{self.pending_order.order_id} @ ${self.pending_order.price:,.2f}")
+            if "pending_orders" in data and isinstance(data["pending_orders"], dict):
+                for s, o_data in data["pending_orders"].items():
+                    if o_data:
+                        self.pending_orders[s] = PendingOrder(**o_data)
+                        logger.info(f"[State] Restored pending order for {s}: #{self.pending_orders[s].order_id}")
+            elif data.get("pending_order"):
+                ord_obj = PendingOrder(**data["pending_order"])
+                self.pending_orders[ord_obj.symbol] = ord_obj
+                logger.info(f"[State] Restored pending order: #{ord_obj.order_id}")
 
-            self.traded_in_current_episode = data.get("traded_in_current_episode", False)
-            self.last_state_id = data.get("last_state_id", None)
-            self.state_age = data.get("state_age", 0)
+            if "last_state_ids" in data and isinstance(data["last_state_ids"], dict):
+                self.last_state_ids.update(data["last_state_ids"])
+            elif "last_state_id" in data:
+                self.last_state_ids[self.symbol] = data["last_state_id"]
+
+            if "state_ages" in data and isinstance(data["state_ages"], dict):
+                self.state_ages.update(data["state_ages"])
+            elif "state_age" in data:
+                self.state_ages[self.symbol] = data["state_age"]
+
+            if "traded_in_episodes" in data and isinstance(data["traded_in_episodes"], dict):
+                self.traded_in_episodes.update(data["traded_in_episodes"])
+            elif "traded_in_current_episode" in data:
+                self.traded_in_episodes[self.symbol] = data["traded_in_current_episode"]
+
             self.completed_trades = data.get("completed_trades", [])
             logger.info(f"[State] Loaded persistent state successfully (History: {len(self.completed_trades)} trades).")
         except Exception as e:
@@ -181,13 +317,25 @@ class LiveTradingBot:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             payload = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbols": self.symbols,
                 "symbol": self.symbol,
                 "timeframe": self.timeframe,
                 "is_testnet": self.is_testnet,
+                "max_concurrent_positions": self.max_concurrent_positions,
+                "allocation_per_trade_usd": self.allocation_per_trade_usd,
+                "active_positions": {
+                    s: asdict(pos) if pos else None for s, pos in self.active_positions.items()
+                },
                 "active_position": asdict(self.active_position) if self.active_position else None,
+                "pending_orders": {
+                    s: asdict(ord) if ord else None for s, ord in self.pending_orders.items()
+                },
                 "pending_order": asdict(self.pending_order) if self.pending_order else None,
+                "traded_in_episodes": self.traded_in_episodes,
                 "traded_in_current_episode": self.traded_in_current_episode,
+                "last_state_ids": self.last_state_ids,
                 "last_state_id": self.last_state_id,
+                "state_ages": self.state_ages,
                 "state_age": self.state_age,
                 "completed_trades": self.completed_trades[-100:],  # Store recent 100
             }
@@ -199,24 +347,25 @@ class LiveTradingBot:
         except Exception as e:
             logger.error(f"[State] Failed to save state to {self.state_file}: {e}")
 
-    def fetch_recent_candles(self, limit: int = 250) -> pd.DataFrame:
+    def fetch_recent_candles(self, symbol: Optional[str] = None, limit: int = 250) -> pd.DataFrame:
         """
         Fetches historical OHLCV candles from Binance via CCXT.
         Falls back to public mainnet API if testnet has insufficient data.
         """
+        sym = symbol or self.symbol
         raw_candles = None
         try:
-            raw_candles = self.exchange.fetch_ohlcv(self.symbol, timeframe=self.timeframe, limit=limit)
+            raw_candles = self.exchange.fetch_ohlcv(sym, timeframe=self.timeframe, limit=limit)
         except Exception as e:
-            logger.warning(f"[MarketData] Error fetching from current exchange configuration: {e}")
+            logger.warning(f"[MarketData] Error fetching {sym} from current exchange configuration: {e}")
             if self.is_testnet:
                 # Fallback to public mainnet for market data reading
-                logger.info("[MarketData] Falling back to public Binance endpoint for OHLCV ingestion...")
+                logger.info(f"[MarketData] Falling back to public Binance endpoint for {sym} OHLCV ingestion...")
                 pub_ex = ccxt.binance({"enableRateLimit": True})
-                raw_candles = pub_ex.fetch_ohlcv(self.symbol, timeframe=self.timeframe, limit=limit)
+                raw_candles = pub_ex.fetch_ohlcv(sym, timeframe=self.timeframe, limit=limit)
 
         if not raw_candles or len(raw_candles) < 60:
-            raise ValueError(f"Insufficient candle data fetched ({len(raw_candles) if raw_candles else 0} bars). Minimum 60 required.")
+            raise ValueError(f"Insufficient candle data fetched for {sym} ({len(raw_candles) if raw_candles else 0} bars). Minimum 60 required.")
 
         df = pd.DataFrame(
             raw_candles,
@@ -227,48 +376,63 @@ class LiveTradingBot:
         df.reset_index(drop=True, inplace=True)
         return df
 
-    def evaluate_market(self, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    def evaluate_market(
+        self,
+        df: Optional[pd.DataFrame] = None,
+        symbol: Optional[str] = None,
+        btc_df: Optional[pd.DataFrame] = None,
+    ) -> Dict[str, Any]:
         """
-        Executes end-to-end evaluation:
+        Executes end-to-end evaluation for a specific symbol:
           1. Compute all indicators and causal microstructure features
           2. Forward-filter Gaussian HMM states (Zero Lookahead Bias)
           3. Evaluate Pilar 1 (Macro Gate) and Pilar 2 (Micro Pullback Trigger)
           4. Calculate Pilar 3 risk boundaries
         """
+        sym = symbol or self.symbol
+        strat = self.strategies.get(sym, self.strategy)
+
         if df is None:
-            df = self.fetch_recent_candles(limit=350)
+            df = self.fetch_recent_candles(symbol=sym, limit=350)
 
         # 1. Compute Indicators
-        df = self.strategy.compute_indicators(df)
-        df.dropna(subset=self.strategy.feature_columns + ["atr", "ema_9", "rsi_14", "ema_200"], inplace=True)
+        df = strat.compute_indicators(df)
+        df.dropna(subset=strat.feature_columns + ["atr", "ema_9", "rsi_14", "ema_200"], inplace=True)
         df.reset_index(drop=True, inplace=True)
 
         # 2. Causal Online Inference
-        causal_states, _ = self.strategy.compute_causal_states(df)
+        causal_states, _ = strat.compute_causal_states(df)
         df["regime_state"] = causal_states
 
         latest_idx = len(df) - 1
         last_bar = df.iloc[latest_idx]
         current_state = int(last_bar["regime_state"])
 
-        # Episode and State Age Tracking
-        if current_state == self.strategy.bullish_state_id:
-            if self.last_state_id == self.strategy.bullish_state_id:
-                state_age = self.state_age + 1
+        # Episode and State Age Tracking per symbol
+        last_st = self.last_state_ids.get(sym)
+        prev_age = self.state_ages.get(sym, 0)
+        traded_in_ep = self.traded_in_episodes.get(sym, False)
+
+        if current_state == strat.bullish_state_id:
+            if last_st == strat.bullish_state_id:
+                state_age = prev_age + 1
             else:
                 state_age = 1
-                self.traded_in_current_episode = False
+                traded_in_ep = False
         else:
             state_age = 0
-            self.traded_in_current_episode = False
+            traded_in_ep = False
 
-        # 3. Evaluate Gates
-        signal_passed, gate_details = self.strategy.evaluate_gates(
+        self.traded_in_episodes[sym] = traded_in_ep
+
+        # 3. Evaluate Gates (with btc_df for cross-asset features if applicable)
+        signal_passed, gate_details = strat.evaluate_gates(
             df=df,
             idx=latest_idx,
             current_state=current_state,
             state_age=state_age,
-            traded_in_episode=self.traded_in_current_episode,
+            traded_in_episode=traded_in_ep,
+            btc_df=btc_df,
         )
 
         close_p = float(last_bar["close"])
@@ -279,9 +443,10 @@ class LiveTradingBot:
 
         # 4. Projected Pilar 3 Risk Boundaries
         entry_target_price = round(ema_9, 2)
-        risk_brackets = self.strategy.calculate_risk_brackets(entry_target_price, atr_14)
+        risk_brackets = strat.calculate_risk_brackets(entry_target_price, atr_14)
 
         return {
+            "symbol": sym,
             "datetime": str(last_bar["datetime"]),
             "close": close_p,
             "ema_200": ema_200,
@@ -290,20 +455,24 @@ class LiveTradingBot:
             "atr_14": atr_14,
             "current_state": current_state,
             "state_age": state_age,
-            "traded_in_episode": self.traded_in_current_episode,
+            "traded_in_episode": traded_in_ep,
             "pilar_1": gate_details["pilar_1"],
             "pilar_2": gate_details["pilar_2"],
+            "pilar_vol": gate_details.get("pilar_vol", True),
+            "pilar_meta": gate_details.get("pilar_meta", True),
+            "meta_prob": gate_details.get("meta_prob", 0.0),
             "signal_passed": signal_passed,
             "entry_target_price": entry_target_price,
             "risk_brackets": risk_brackets,
             "df": df,
         }
 
-    def format_precision(self, amount: float, price: float) -> Tuple[float, float]:
+    def format_precision(self, amount: float, price: float, symbol: Optional[str] = None) -> Tuple[float, float]:
         """Formats order quantity and price conforming to exchange specifications."""
+        sym = symbol or self.symbol
         try:
             if hasattr(self.exchange, "amount_to_precision") and callable(self.exchange.amount_to_precision):
-                res = self.exchange.amount_to_precision(self.symbol, amount)
+                res = self.exchange.amount_to_precision(sym, amount)
                 if isinstance(res, (int, float, str)) and not isinstance(res, bool):
                     amount = float(res)
                 else:
@@ -315,7 +484,7 @@ class LiveTradingBot:
 
         try:
             if hasattr(self.exchange, "price_to_precision") and callable(self.exchange.price_to_precision):
-                res = self.exchange.price_to_precision(self.symbol, price)
+                res = self.exchange.price_to_precision(sym, price)
                 if isinstance(res, (int, float, str)) and not isinstance(res, bool):
                     price = float(res)
                 else:
@@ -327,31 +496,34 @@ class LiveTradingBot:
 
         return amount, price
 
-    def check_pending_order(self, current_bar_time: str) -> None:
+    def check_pending_order(self, current_bar_time: str, symbol: Optional[str] = None) -> None:
         """
-        Monitors open limit order. If unfilled by the next hourly bar, cancel it
-        to prevent stale execution out of signal context.
+        Monitors open limit order for a given symbol. If unfilled by the next hourly bar,
+        cancel it to prevent stale execution out of signal context.
         """
-        if self.pending_order is None:
+        sym = symbol or self.symbol
+        pending = self.pending_orders.get(sym)
+        if pending is None:
             return
 
-        order_id = self.pending_order.order_id
-        logger.info(f"[Order] Checking status of pending Maker Limit Order #{order_id}...")
+        order_id = pending.order_id
+        logger.info(f"[Order] Checking status of pending Maker Limit Order #{order_id} for {sym}...")
 
         try:
-            order = self.exchange.fetch_order(order_id, self.symbol)
+            order = self.exchange.fetch_order(order_id, sym)
             status = order.get("status", "open").lower()
 
             if status == "filled":
-                fill_price = float(order.get("average", order.get("price", self.pending_order.price)))
-                filled_qty = float(order.get("filled", self.pending_order.amount))
-                logger.info(f"[Order] Order #{order_id} FILLED! Price: ${fill_price:,.2f}, Qty: {filled_qty:.6f}")
+                fill_price = float(order.get("average", order.get("price", pending.price)))
+                filled_qty = float(order.get("filled", pending.amount))
+                logger.info(f"[Order] Order #{order_id} ({sym}) FILLED! Price: ${fill_price:,.2f}, Qty: {filled_qty:.6f}")
 
                 # Establish Pilar 3 Active Position
-                brackets = self.strategy.calculate_risk_brackets(fill_price, self.pending_order.signal_atr)
-                self.active_position = ActivePosition(
-                    position_id=f"POS-{int(time.time())}",
-                    symbol=self.symbol,
+                strat = self.strategies.get(sym, self.strategy)
+                brackets = strat.calculate_risk_brackets(fill_price, pending.signal_atr)
+                self.active_positions[sym] = ActivePosition(
+                    position_id=f"POS-{sym.replace('/', '')}-{int(time.time())}",
+                    symbol=sym,
                     entry_price=fill_price,
                     initial_quantity=filled_qty,
                     remaining_quantity=filled_qty,
@@ -363,215 +535,318 @@ class LiveTradingBot:
                     entry_time=current_bar_time,
                     bars_held=0,
                 )
-                self.pending_order = None
+                self.pending_orders[sym] = None
                 self.save_state()
                 return
 
             elif status in ("canceled", "rejected", "expired"):
-                logger.info(f"[Order] Order #{order_id} closed with status '{status}'. Clearing pending.")
-                self.pending_order = None
+                logger.info(f"[Order] Order #{order_id} ({sym}) closed with status '{status}'. Clearing pending.")
+                self.pending_orders[sym] = None
                 self.save_state()
                 return
 
             # If still unfilled and bar has rolled over -> Cancel
-            if self.pending_order.expire_after_bar_time and current_bar_time != self.pending_order.expire_after_bar_time:
-                logger.info(f"[Order] Order #{order_id} unfilled past bar {self.pending_order.expire_after_bar_time}. Canceling...")
+            if pending.expire_after_bar_time and current_bar_time != pending.expire_after_bar_time:
+                logger.info(f"[Order] Order #{order_id} ({sym}) unfilled past bar {pending.expire_after_bar_time}. Canceling...")
                 try:
-                    self.exchange.cancel_order(order_id, self.symbol)
+                    self.exchange.cancel_order(order_id, sym)
                 except Exception as cancel_err:
                     logger.warning(f"[Order] Cancel order returned: {cancel_err}")
-                self.pending_order = None
+                self.pending_orders[sym] = None
                 self.save_state()
 
         except Exception as e:
-            logger.error(f"[Order] Error querying order #{order_id}: {e}")
+            logger.error(f"[Order] Error querying order #{order_id} ({sym}): {e}")
 
-    def place_maker_limit_buy(self, price: float, atr: float, current_bar_time: str) -> Optional[PendingOrder]:
+    def place_maker_limit_buy(
+        self,
+        price: float,
+        atr: float,
+        current_bar_time: str,
+        symbol: Optional[str] = None,
+    ) -> Optional[PendingOrder]:
         """
-        Submits passive Maker Limit Order at queue level (EMA 9).
+        Submits passive Maker Limit Order at queue level (EMA 9) for a given symbol.
         """
-        allocation = self.config.trade_allocation
+        sym = symbol or self.symbol
+        allocation = self.allocation_per_trade_usd
         raw_qty = allocation / price
-        qty, clean_price = self.format_precision(raw_qty, price)
+        qty, clean_price = self.format_precision(raw_qty, price, symbol=sym)
 
         logger.info(
-            f"[Order] Placing Maker Limit BUY Order: {self.symbol} | "
+            f"[Order] Placing Maker Limit BUY Order: {sym} | "
             f"Qty: {qty:.6f} | Price: ${clean_price:,.2f} | Notional: ~${allocation:.2f} USDT"
         )
 
         try:
-            res = self.exchange.create_limit_buy_order(self.symbol, qty, clean_price)
+            res = self.exchange.create_limit_buy_order(sym, qty, clean_price)
             order_id = str(res["id"])
-            self.pending_order = PendingOrder(
+            pending_obj = PendingOrder(
                 order_id=order_id,
-                symbol=self.symbol,
+                symbol=sym,
                 price=clean_price,
                 amount=qty,
                 signal_atr=atr,
                 created_at_time=datetime.now(timezone.utc).isoformat(),
                 expire_after_bar_time=current_bar_time,
             )
-            self.traded_in_current_episode = True
+            self.pending_orders[sym] = pending_obj
+            self.traded_in_episodes[sym] = True
             self.save_state()
-            logger.info(f"[Order] Limit BUY order successfully placed. Order ID: #{order_id}")
-            return self.pending_order
+            logger.info(f"[Order] Limit BUY order successfully placed for {sym}. Order ID: #{order_id}")
+            return pending_obj
         except Exception as e:
-            logger.error(f"[Order] Failed to create limit buy order: {e}")
+            logger.error(f"[Order] Failed to create limit buy order for {sym}: {e}")
             return None
 
-    def monitor_active_position(self, current_price: float, current_regime_state: Optional[int] = None) -> None:
+    def monitor_active_position(
+        self,
+        current_price: float,
+        current_regime_state: Optional[int] = None,
+        symbol: Optional[str] = None,
+    ) -> None:
         """
-        Pilar 3 Real-time Position Management & Scaling Out:
+        Pilar 3 Real-time Position Management & Scaling Out for a symbol:
           - TP1 (50% scale out): current_price >= tp1_price -> Sell 50%, lock BE ratchet
           - TP2 (Remaining 50%): current_price >= tp2_price -> Sell remaining 50%
           - SL (Stop Loss): current_price <= sl_price -> Sell all remaining
-          - Emergency Regime Change: Bearish dump (State 3) -> Immediate market exit
+          - Emergency Regime Change: Bearish dump -> Immediate market exit
         """
-        if self.active_position is None:
+        sym = symbol or self.symbol
+        pos = self.active_positions.get(sym)
+        if pos is None:
             return
 
-        pos = self.active_position
+        strat = self.strategies.get(sym, self.strategy)
         hit_sl = current_price <= pos.sl_price
         hit_tp1 = (not pos.tp1_hit) and (current_price >= pos.tp1_price)
         hit_tp2 = (pos.tp1_hit) and (current_price >= pos.tp2_price)
-        hit_emergency = (current_regime_state == self.strategy.bearish_state_id)
+        hit_emergency = (current_regime_state == strat.bearish_state_id)
 
         # 1. Stop Loss Check
         if hit_sl:
             reason = "BREAK_EVEN_SL" if pos.tp1_hit else "STOP_LOSS"
             logger.warning(
-                f"[Position] {reason} TRIGGERED! Price: ${current_price:,.2f} <= SL: ${pos.sl_price:,.2f}. "
-                f"Closing remaining {pos.remaining_quantity:.6f} {pos.symbol}..."
+                f"[Position] {reason} TRIGGERED for {sym}! Price: ${current_price:,.2f} <= SL: ${pos.sl_price:,.2f}. "
+                f"Closing remaining {pos.remaining_quantity:.6f} {sym}..."
             )
-            self._close_position_market(pos.remaining_quantity, current_price, reason)
+            self._close_position_market(pos.remaining_quantity, current_price, reason, symbol=sym)
             return
 
         # 2. TP1 Scale-Out (50%)
         if hit_tp1:
             sell_qty = pos.initial_quantity * 0.5
-            sell_qty, _ = self.format_precision(sell_qty, current_price)
+            sell_qty, _ = self.format_precision(sell_qty, current_price, symbol=sym)
             logger.info(
-                f"[Position] TARGET 1 (TP1) HIT! Price: ${current_price:,.2f} >= TP1: ${pos.tp1_price:,.2f}. "
-                f"Scaling out 50% ({sell_qty:.6f} {pos.symbol})..."
+                f"[Position] TARGET 1 (TP1) HIT for {sym}! Price: ${current_price:,.2f} >= TP1: ${pos.tp1_price:,.2f}. "
+                f"Scaling out 50% ({sell_qty:.6f} {sym})..."
             )
             try:
-                self.exchange.create_market_sell_order(self.symbol, sell_qty)
+                self.exchange.create_market_sell_order(sym, sell_qty)
                 pos.remaining_quantity -= sell_qty
                 pos.tp1_hit = True
                 # Ratchet SL to Hard-Floored Break-Even (+0.25% net buffer)
                 pos.sl_price = max(pos.sl_price, pos.be_price)
-                logger.info(f"[Position] Stop loss ratcheted to Break-Even: ${pos.sl_price:,.2f}")
+                logger.info(f"[Position] Stop loss ratcheted to Break-Even for {sym}: ${pos.sl_price:,.2f}")
                 self.save_state()
             except Exception as e:
-                logger.error(f"[Position] Failed to execute TP1 sell order: {e}")
+                logger.error(f"[Position] Failed to execute TP1 sell order for {sym}: {e}")
             return
 
         # 3. TP2 Full Take Profit (Remaining 50%)
         if hit_tp2:
             logger.info(
-                f"[Position] TARGET 2 (TP2) HIT! Price: ${current_price:,.2f} >= TP2: ${pos.tp2_price:,.2f}. "
-                f"Closing remaining {pos.remaining_quantity:.6f} {pos.symbol} (Trade Complete)..."
+                f"[Position] TARGET 2 (TP2) HIT for {sym}! Price: ${current_price:,.2f} >= TP2: ${pos.tp2_price:,.2f}. "
+                f"Closing remaining {pos.remaining_quantity:.6f} {sym} (Trade Complete)..."
             )
-            self._close_position_market(pos.remaining_quantity, current_price, "TAKE_PROFIT_2")
+            self._close_position_market(pos.remaining_quantity, current_price, "TAKE_PROFIT_2", symbol=sym)
             return
 
         # 4. Emergency Regime Exit
         if hit_emergency:
             logger.warning(
-                f"[Position] EMERGENCY REGIME CHANGE! State {current_regime_state} (Bearish Dump). "
-                f"Closing remaining {pos.remaining_quantity:.6f} {pos.symbol}..."
+                f"[Position] EMERGENCY REGIME CHANGE for {sym}! State {current_regime_state} (Bearish Dump). "
+                f"Closing remaining {pos.remaining_quantity:.6f} {sym}..."
             )
-            self._close_position_market(pos.remaining_quantity, current_price, "EMERGENCY_REGIME_CHANGE")
+            self._close_position_market(pos.remaining_quantity, current_price, "EMERGENCY_REGIME_CHANGE", symbol=sym)
             return
 
-    def _close_position_market(self, quantity: float, exit_price: float, exit_reason: str) -> None:
+    def _close_position_market(
+        self,
+        quantity: float,
+        exit_price: float,
+        exit_reason: str,
+        symbol: Optional[str] = None,
+    ) -> None:
         """Executes full position closure at market price."""
-        clean_qty, _ = self.format_precision(quantity, exit_price)
+        sym = symbol or self.symbol
+        pos = self.active_positions.get(sym)
+        if not pos:
+            return
+
+        clean_qty, _ = self.format_precision(quantity, exit_price, symbol=sym)
         try:
-            self.exchange.create_market_sell_order(self.symbol, clean_qty)
-            gross_pnl = (exit_price - self.active_position.entry_price) * clean_qty
+            self.exchange.create_market_sell_order(sym, clean_qty)
+            gross_pnl = (exit_price - pos.entry_price) * clean_qty
             trade_record = {
-                "position_id": self.active_position.position_id,
-                "symbol": self.symbol,
-                "entry_price": self.active_position.entry_price,
+                "position_id": pos.position_id,
+                "symbol": sym,
+                "entry_price": pos.entry_price,
                 "exit_price": exit_price,
                 "quantity": clean_qty,
                 "gross_pnl": gross_pnl,
                 "exit_reason": exit_reason,
-                "entry_time": self.active_position.entry_time,
+                "entry_time": pos.entry_time,
                 "exit_time": datetime.now(timezone.utc).isoformat(),
             }
             self.completed_trades.append(trade_record)
-            self.active_position = None
+            self.active_positions[sym] = None
             self.save_state()
-            logger.info(f"[Position] Position closed ({exit_reason}). PnL: ${gross_pnl:+,.2f} USDT.")
+            logger.info(f"[Position] Position closed for {sym} ({exit_reason}). PnL: ${gross_pnl:+,.2f} USDT.")
         except Exception as e:
-            logger.error(f"[Position] Error executing market sell order: {e}")
+            logger.error(f"[Position] Error executing market sell order for {sym}: {e}")
+
+    def scan_all_pairs(self, dry_run: bool = True) -> Dict[str, Dict[str, Any]]:
+        """
+        Sequentially scans all configured symbols (BTC/USDT, ETH/USDT, SOL/USDT):
+          - Applies rate-limiting sleep (0.5s) between pairs
+          - Isolated try-except per pair to protect loop integrity
+          - Computes cross-asset BTC returns for altcoins
+          - Enforces portfolio concurrent position quota (max 3 positions)
+        """
+        results: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Fetch BTC candles first to supply macro reference for cross-asset features
+        btc_df: Optional[pd.DataFrame] = None
+        btc_symbol = "BTC/USDT"
+        try:
+            btc_df = self.fetch_recent_candles(symbol=btc_symbol, limit=350)
+        except Exception as btc_err:
+            logger.warning(f"[Scanner] Failed to fetch benchmark BTC candles: {btc_err}")
+
+        # Count existing exposure (active positions + pending orders)
+        active_count = sum(1 for p in self.active_positions.values() if p is not None) + \
+                       sum(1 for o in self.pending_orders.values() if o is not None)
+
+        for sym in self.symbols:
+            # Respect Binance API rate limits
+            time.sleep(0.5)
+
+            try:
+                # Use cached btc_df if scanning BTC itself
+                coin_df = btc_df if (sym == btc_symbol and btc_df is not None) else None
+                eval_res = self.evaluate_market(df=coin_df, symbol=sym, btc_df=btc_df)
+                results[sym] = eval_res
+
+                self.last_state_ids[sym] = eval_res["current_state"]
+                self.state_ages[sym] = eval_res["state_age"]
+
+                # Process order logic if signal passed
+                if eval_res["signal_passed"]:
+                    has_exposure = (self.active_positions.get(sym) is not None) or (self.pending_orders.get(sym) is not None)
+
+                    if not has_exposure:
+                        if active_count < self.max_concurrent_positions:
+                            if not dry_run:
+                                logger.info(f"[Scanner] GATE OPEN for {sym}! Submitting Maker Limit Buy order...")
+                                self.place_maker_limit_buy(
+                                    price=eval_res["entry_target_price"],
+                                    atr=eval_res["atr_14"],
+                                    current_bar_time=eval_res["datetime"],
+                                    symbol=sym,
+                                )
+                                active_count += 1
+                            else:
+                                logger.info(
+                                    f"[Scanner] [DRY-RUN] GATE OPEN for {sym}! "
+                                    f"Portfolio quota available ({active_count + 1}/{self.max_concurrent_positions})."
+                                )
+                        else:
+                            logger.warning(
+                                f"[Scanner] GATE OPEN for {sym}, but Portfolio Quota is FULL "
+                                f"({active_count}/{self.max_concurrent_positions} active). Order skipped."
+                            )
+                    else:
+                        logger.info(f"[Scanner] Symmetrical signal on {sym}, but position or order already active. Skipped.")
+
+            except Exception as sym_err:
+                logger.error(f"[Scanner] Error evaluating {sym}: {sym_err}", exc_info=True)
+
+        self.save_state()
+        return results
 
     def run_once(self, dry_run: bool = True) -> Dict[str, Any]:
         """
-        Executes a single market evaluation and prints a formatted diagnostic report.
-        In dry-run mode, no real orders are sent to the exchange.
+        Executes a single market scan across all configured pairs and prints
+        a formatted diagnostic multi-pair table. Returns primary symbol result.
         """
-        eval_res = self.evaluate_market()
-        current_price = eval_res["close"]
-        current_state = eval_res["current_state"]
-        self.last_state_id = current_state
-        self.state_age = eval_res["state_age"]
-        self.save_state()
+        results = self.scan_all_pairs(dry_run=dry_run)
 
-        # Terminal Visual Report
-        print("\n" + "=" * 80)
-        print(f"{'ADAPTIVE TRADING SYSTEM - REGIME CORONG LIVE ENGINE':^80}")
-        print("=" * 80)
+        # Terminal Multi-Pair Diagnostic Table
+        print("\n" + "=" * 92)
+        print(f"{'ADAPTIVE TRADING SYSTEM - MULTI-PAIR REGIME SCANNER':^92}")
+        print("=" * 92)
         mode_str = "DRY-RUN (Simulated)" if dry_run else f"LIVE ({'TESTNET' if self.is_testnet else 'MAINNET'})"
-        print(f"  Mode           : {mode_str}")
-        print(f"  Symbol / TF    : {self.symbol} [{self.timeframe}]")
-        print(f"  Bar Datetime   : {eval_res['datetime']}")
-        print(f"  Current Price  : ${current_price:,.2f}")
-        print("-" * 80)
-        print(f"  EMA(200) Trend : ${eval_res['ema_200']:,.2f} ({'BULLISH (Close > EMA200)' if current_price > eval_res['ema_200'] else 'BEARISH (Close <= EMA200)'})")
-        print(f"  EMA(9) Micro   : ${eval_res['ema_9']:,.2f}")
-        print(f"  RSI(14)        : {eval_res['rsi_14']:.2f}")
-        print(f"  ATR(14)        : ${eval_res['atr_14']:,.2f}")
-        print("-" * 80)
-        print(f"  HMM State      : State {current_state} ({'BULLISH' if current_state == self.strategy.bullish_state_id else 'BEARISH/SIDEWAYS'})")
-        print(f"  State Age      : {self.state_age} bar(s)")
-        print(f"  Single-Shot    : {'AVAILABLE' if not self.traded_in_current_episode else 'ALREADY TRADED THIS EPISODE'}")
-        print("-" * 80)
-        p1_status = "[PASSED]" if eval_res["pilar_1"] else "[REJECTED]"
-        p2_status = "[PASSED]" if eval_res["pilar_2"] else "[REJECTED]"
-        gate_status = "GATE OPEN (BUY SIGNAL)" if eval_res["signal_passed"] else "GATE CLOSED (WAITING)"
-        print(f"  Pilar 1 (Macro Gate)     : {p1_status}")
-        print(f"  Pilar 2 (Micro Pullback) : {p2_status}")
-        print(f"  Cascading Decision       : {gate_status}")
+        active_count = sum(1 for p in self.active_positions.values() if p is not None)
+        pending_count = sum(1 for o in self.pending_orders.values() if o is not None)
+        print(f"  Mode           : {mode_str} | Timeframe: {self.timeframe}")
+        print(f"  Portfolio Quota: {active_count + pending_count}/{self.max_concurrent_positions} Slots Used "
+              f"(Active: {active_count}, Pending: {pending_count}) | Allocation: ${self.allocation_per_trade_usd:,.2f}/trade")
+        print("-" * 92)
+        header = f"{'Symbol':<10} | {'Close':<11} | {'HMM State':<14} | {'Age':<4} | {'P1':<6} | {'P2':<6} | {'P_Vol':<6} | {'AI Decider':<16} | {'Signal'}"
+        print(header)
+        print("-" * 92)
 
-        brackets = eval_res["risk_brackets"]
-        print("-" * 80)
-        print("  Pilar 3 Execution Boundaries (if triggered):")
-        print(f"    - Target Limit Buy (EMA 9) : ${eval_res['entry_target_price']:,.2f}")
-        print(f"    - Initial Stop Loss (0.70x): ${brackets['sl_price']:,.2f}")
-        print(f"    - TP 1 Scale Out (0.80x)   : ${brackets['tp1_price']:,.2f} (Close 50%)")
-        print(f"    - TP 2 Full Target (1.20x) : ${brackets['tp2_price']:,.2f} (Close 50%)")
-        print(f"    - Break-Even Ratchet Lock  : ${brackets['be_price']:,.2f} (+0.25% fee buffer)")
-        print("-" * 80)
-        pos_str = f"Active ({self.active_position.position_id} @ ${self.active_position.entry_price:,.2f})" if self.active_position else "None"
-        ord_str = f"Pending (#{self.pending_order.order_id} @ ${self.pending_order.price:,.2f})" if self.pending_order else "None"
-        print(f"  Active Position : {pos_str}")
-        print(f"  Pending Order   : {ord_str}")
-        print(f"  State Saved To  : {self.state_file}")
-        print("=" * 80 + "\n")
+        for sym in self.symbols:
+            res = results.get(sym)
+            if not res:
+                print(f"{sym:<10} | {'ERROR':<11} | {'-':<14} | {'-':<4} | {'-':<6} | {'-':<6} | {'-':<6} | {'-':<16} | FAILED")
+                continue
 
-        return eval_res
+            strat = self.strategies.get(sym, self.strategy)
+            st = res["current_state"]
+            st_str = f"S{st} ({'BULL' if st == strat.bullish_state_id else 'BEAR/SIDE'})"
+            p1_str = "OK" if res["pilar_1"] else "FAIL"
+            p2_str = "OK" if res["pilar_2"] else "FAIL"
+            p_vol_str = "OK" if res.get("pilar_vol", True) else "FAIL"
+            meta_prob = res.get("meta_prob", 0.0)
+            meta_str = f"{'OK' if res.get('pilar_meta', True) else 'FAIL'} ({meta_prob:.2f})"
+            sig_str = "BUY" if res["signal_passed"] else "WAIT"
+
+            row = (
+                f"{sym:<10} | ${res['close']:<10,.2f} | {st_str:<14} | {res['state_age']:<4} | "
+                f"{p1_str:<6} | {p2_str:<6} | {p_vol_str:<6} | {meta_str:<16} | {sig_str}"
+            )
+            print(row)
+
+        print("-" * 92)
+        print("  Active Positions & Brackets:")
+        for sym in self.symbols:
+            pos = self.active_positions.get(sym)
+            ord_p = self.pending_orders.get(sym)
+            status_desc = "FLAT"
+            if pos:
+                status_desc = f"LONG ({pos.position_id}) Entry: ${pos.entry_price:,.2f} | TP1: ${pos.tp1_price:,.2f} | TP2: ${pos.tp2_price:,.2f} | SL: ${pos.sl_price:,.2f}"
+            elif ord_p:
+                status_desc = f"PENDING (#{ord_p.order_id}) Limit Buy @ ${ord_p.price:,.2f}"
+            print(f"    - {sym:<10}: {status_desc}")
+
+        print(f"  State Ledger   : {self.state_file}")
+        print("=" * 92 + "\n")
+
+        return results.get(self.symbol, next(iter(results.values())))
 
     def start(self, poll_interval: int = 20) -> None:
         """
-        Continuous scheduling loop:
-          - Hourly bar evaluation at minute 00:05 (5 seconds after candle close)
-          - High-frequency tick monitoring every poll_interval seconds (15-30s) for TP/SL execution
+        Continuous multi-pair scheduling loop:
+          - Hourly bar evaluation at minute 00:05 across BTC, ETH, and SOL
+          - High-frequency tick monitoring every poll_interval seconds for all active positions
         """
         self.is_running = True
-        logger.info(f"[LiveBot] Starting engine loop for {self.symbol} [{self.timeframe}] (Tick interval: {poll_interval}s)")
+        logger.info(
+            f"[LiveBot] Starting Multi-Pair Scanner loop for {self.symbols} [{self.timeframe}] "
+            f"(Tick interval: {poll_interval}s, Quota: {self.max_concurrent_positions})"
+        )
 
         last_evaluated_bar: Optional[str] = None
 
@@ -581,48 +856,40 @@ class LiveTradingBot:
                 minute = now_utc.minute
                 second = now_utc.second
 
-                # Hourly Candle Close Trigger: At minute 00, between 05s and 25s
+                # Hourly Candle Close Trigger: At minute 00, between 05s and 35s
                 is_hourly_cycle = (minute == 0) and (5 <= second <= 35)
 
                 if is_hourly_cycle:
-                    df = self.fetch_recent_candles(limit=250)
-                    latest_bar_time = str(df["datetime"].iloc[-1])
+                    # Probe primary symbol bar time
+                    probe_df = self.fetch_recent_candles(symbol=self.symbol, limit=5)
+                    latest_bar_time = str(probe_df["datetime"].iloc[-1])
 
                     if latest_bar_time != last_evaluated_bar:
-                        logger.info(f"[Hourly] New 1H candle closed: {latest_bar_time}. Running evaluation...")
+                        logger.info(f"[Hourly] New 1H candle closed: {latest_bar_time}. Running multi-pair scanner...")
                         last_evaluated_bar = latest_bar_time
 
-                        # 1. Check & cancel expired pending orders
-                        self.check_pending_order(latest_bar_time)
+                        # 1. Check & cancel expired pending orders for all symbols
+                        for sym in self.symbols:
+                            self.check_pending_order(latest_bar_time, symbol=sym)
 
-                        # 2. Evaluate market gates
-                        eval_res = self.evaluate_market(df)
-                        current_state = eval_res["current_state"]
-                        self.last_state_id = current_state
-                        self.state_age = eval_res["state_age"]
+                        # 2. Run full multi-pair scan and submit entries
+                        self.scan_all_pairs(dry_run=False)
 
-                        # 3. Check for new buy signal
-                        if eval_res["signal_passed"] and self.active_position is None and self.pending_order is None:
-                            logger.info("[Hourly] GATE OPEN! Submitting Maker Limit Buy order...")
-                            self.place_maker_limit_buy(
-                                price=eval_res["entry_target_price"],
-                                atr=eval_res["atr_14"],
-                                current_bar_time=latest_bar_time,
-                            )
-                        else:
-                            logger.info(f"[Hourly] Evaluation complete. Status: {p1_status if 'p1_status' in locals() else 'Evaluated'}")
-
-                        self.save_state()
-
-                # High-frequency tick monitor for active positions
-                if self.active_position is not None:
-                    try:
-                        ticker = self.exchange.fetch_ticker(self.symbol)
-                        current_price = float(ticker.get("last", ticker.get("close", 0.0)))
-                        if current_price > 0:
-                            self.monitor_active_position(current_price, self.last_state_id)
-                    except Exception as tick_err:
-                        logger.warning(f"[Monitor] Error fetching ticker: {tick_err}")
+                # High-frequency tick monitor for all active positions
+                for sym, pos in list(self.active_positions.items()):
+                    if pos is not None:
+                        try:
+                            time.sleep(0.5)  # Rate limit safety between ticker requests
+                            ticker = self.exchange.fetch_ticker(sym)
+                            current_price = float(ticker.get("last", ticker.get("close", 0.0)))
+                            if current_price > 0:
+                                self.monitor_active_position(
+                                    current_price=current_price,
+                                    current_regime_state=self.last_state_ids.get(sym),
+                                    symbol=sym,
+                                )
+                        except Exception as tick_err:
+                            logger.warning(f"[Monitor] Error fetching ticker for {sym}: {tick_err}")
 
                 # Sleep until next tick
                 time.sleep(poll_interval)
@@ -644,8 +911,9 @@ class LiveTradingBot:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Adaptive Trading System - Live Regime Bot Engine")
-    parser.add_argument("--dry-run-once", action="store_true", help="Run a single evaluation cycle in dry-run mode and exit")
-    parser.add_argument("--symbol", type=str, default=None, help="Trading pair symbol (default: BTC/USDT)")
+    parser.add_argument("--dry-run-once", action="store_true", help="Run a single multi-pair evaluation cycle in dry-run mode and exit")
+    parser.add_argument("--symbol", type=str, default=None, help="Primary trading pair symbol (default: BTC/USDT)")
+    parser.add_argument("--symbols", type=str, nargs="+", default=None, help="List of trading pairs to scan (default: BTC/USDT ETH/USDT SOL/USDT)")
     parser.add_argument("--timeframe", type=str, default=None, help="Trading timeframe (default: 1h)")
     parser.add_argument("--poll-interval", type=int, default=20, help="Tick polling interval in seconds (default: 20)")
     parser.add_argument("--state-file", type=str, default="data/live_bot_state.json", help="Path to state JSON file")
@@ -655,13 +923,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     bot = LiveTradingBot(
+        symbols=args.symbols,
         symbol=args.symbol,
         timeframe=args.timeframe,
         state_file=Path(args.state_file),
     )
 
     if args.dry_run_once:
-        logger.info("Executing dry-run market evaluation cycle...")
+        logger.info("Executing dry-run multi-pair market evaluation cycle...")
         bot.run_once(dry_run=True)
         sys.exit(0)
 
@@ -670,3 +939,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

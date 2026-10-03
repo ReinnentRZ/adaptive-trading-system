@@ -37,6 +37,18 @@ DEFAULT_FEATURE_COLUMNS: List[str] = [
     "lorentzian_signal",
 ]
 
+MULTI_ASSET_FEATURE_COLUMNS: List[str] = [
+    "rsi",
+    "cci",
+    "adx",
+    "wt_diff",
+    "volatility_ratio",
+    "normalized_atr",
+    "lorentzian_signal",
+    "btc_return_1h",
+    "relative_strength_vs_btc",
+]
+
 
 class PurgedTimeSeriesSplit:
     """
@@ -109,27 +121,34 @@ class MetaLabelingGate:
 
     def _resolve_model_path(self, explicit_path: Optional[Union[str, Path]]) -> Path:
         """Finds the best matching pre-trained LightGBM model artifact."""
+        proj_root = Path(__file__).resolve().parent.parent.parent
         if explicit_path:
             p = Path(explicit_path)
             if p.exists():
                 return p
-            # Relative to project root
-            proj_root = Path(__file__).resolve().parent.parent.parent
             cand = proj_root / explicit_path
             if cand.exists():
                 return cand
 
         # Auto-discovery candidates in priority order:
-        candidates = [
-            self.models_dir / f"{self.coin}_{self.timeframe}_funnel_metalabeler.joblib",
-            self.models_dir / f"{self.coin}_{self.timeframe}_dedication_lgbm.joblib",
-            self.models_dir / f"{self.coin}_30m_dedication_lgbm.joblib",
-            self.models_dir / f"{self.coin}_15m_dedication_lgbm.joblib",
-            self.models_dir / f"{self.coin}_5m_dedication_lgbm.joblib",
-            self.models_dir / "btc_15m_dedication_lgbm.joblib",
-        ]
+        if self.timeframe == "1h":
+            candidates = [
+                self.models_dir / "multi_asset_1h_funnel_metalabeler.joblib",
+                self.models_dir / f"{self.coin}_1h_funnel_metalabeler.joblib",
+                self.models_dir / f"{self.coin}_1h_dedication_lgbm.joblib",
+                self.models_dir / "btc_1h_funnel_metalabeler.joblib",
+            ]
+        else:
+            candidates = [
+                self.models_dir / f"{self.coin}_{self.timeframe}_funnel_metalabeler.joblib",
+                self.models_dir / f"{self.coin}_{self.timeframe}_dedication_lgbm.joblib",
+                self.models_dir / f"{self.coin}_30m_dedication_lgbm.joblib",
+                self.models_dir / f"{self.coin}_15m_dedication_lgbm.joblib",
+                self.models_dir / f"{self.coin}_5m_dedication_lgbm.joblib",
+                self.models_dir / "btc_15m_dedication_lgbm.joblib",
+                self.models_dir / "multi_asset_1h_funnel_metalabeler.joblib",
+            ]
 
-        proj_root = Path(__file__).resolve().parent.parent.parent
         for c in candidates:
             if c.exists():
                 return c
@@ -139,9 +158,11 @@ class MetaLabelingGate:
 
         # Scan models directory for any funnel_metalabeler or dedication_lgbm artifact
         if self.models_dir.exists():
-            matches = list(self.models_dir.glob(f"*{self.coin}*{self.timeframe}*metalabeler*.joblib"))
+            matches = list(self.models_dir.glob("*multi_asset*metalabeler*.joblib"))
             if not matches:
-                matches = list(self.models_dir.glob("*metalabeler*.joblib"))
+                matches = list(self.models_dir.glob(f"*{self.coin}*{self.timeframe}*metalabeler*.joblib"))
+            if not matches:
+                matches = list(self.models_dir.glob("*funnel_metalabeler*.joblib"))
             if not matches:
                 matches = list(self.models_dir.glob("*dedication_lgbm*.joblib"))
             if matches:
@@ -174,10 +195,11 @@ class MetaLabelingGate:
             self.model = None
 
     @staticmethod
-    def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+    def extract_features(df: pd.DataFrame, btc_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Calculates Layer-1 technical indicators and microstructure features
         required by the LightGBM Meta-Model. Causal and fully vectorized.
+        Supports cross-asset macro features (btc_return_1h, relative_strength_vs_btc).
         """
         df = df.copy()
         close = df["close"].to_numpy(dtype=np.float64)
@@ -221,9 +243,38 @@ class MetaLabelingGate:
         if "lorentzian_signal" not in df.columns:
             df["lorentzian_signal"] = 1.0
 
+        # 5. Cross-Asset Macro Bitcoin Features
+        with np.errstate(divide="ignore", invalid="ignore"):
+            asset_ret = np.zeros(len(close), dtype=np.float64)
+            if len(close) > 1:
+                asset_ret[1:] = np.log(close[1:] / close[:-1])
+
+        if "btc_return_1h" not in df.columns:
+            if btc_df is not None:
+                btc_c = btc_df["close"].to_numpy(dtype=np.float64)
+                btc_ret = np.zeros(len(btc_c), dtype=np.float64)
+                if len(btc_c) > 1:
+                    btc_ret[1:] = np.log(btc_c[1:] / btc_c[:-1])
+                btc_temp = btc_df.copy()
+                btc_temp["btc_return_1h"] = btc_ret
+                if "datetime" in df.columns and "datetime" in btc_temp.columns:
+                    btc_map = btc_temp.set_index("datetime")["btc_return_1h"].to_dict()
+                    df["btc_return_1h"] = df["datetime"].map(btc_map).fillna(0.0)
+                elif len(df) == len(btc_temp):
+                    df["btc_return_1h"] = btc_ret
+                else:
+                    df["btc_return_1h"] = asset_ret
+            else:
+                df["btc_return_1h"] = asset_ret
+
+        if "relative_strength_vs_btc" not in df.columns:
+            df["relative_strength_vs_btc"] = asset_ret - df["btc_return_1h"].to_numpy(dtype=np.float64)
+
         return df
 
-    def evaluate(self, df: pd.DataFrame, idx: int) -> MetaLabelResult:
+    def evaluate(
+        self, df: pd.DataFrame, idx: int, btc_df: Optional[pd.DataFrame] = None
+    ) -> MetaLabelResult:
         """
         Evaluates a candidate trade signal at bar index `idx` using LightGBM.
         Strictly causal: inspects only bar `idx`.
@@ -239,6 +290,12 @@ class MetaLabelingGate:
                 threshold=self.threshold,
                 model_name="NONE (FALLBACK APPROVED)",
             )
+
+        # Ensure cross-asset features exist if model expects them
+        if "btc_return_1h" in self.feature_columns and "btc_return_1h" not in df.columns:
+            df = self.extract_features(df, btc_df=btc_df)
+        elif "relative_strength_vs_btc" in self.feature_columns and "relative_strength_vs_btc" not in df.columns:
+            df = self.extract_features(df, btc_df=btc_df)
 
         bar = df.iloc[idx]
         feat_dict: Dict[str, float] = {}
@@ -260,18 +317,22 @@ class MetaLabelingGate:
                 raw_pred = self.model.predict(X)
                 prob_win = float(raw_pred[0])
         except Exception as e:
-            logger.error(f"[MetaLabeler] Inference error at index {idx}: {e}")
+            logger.warning(f"[MetaLabeler] Prediction failed: {e}. Fallback to approved.")
             prob_win = 0.50
 
         is_approved = bool(prob_win >= self.threshold)
-        model_name = self.resolved_model_path.name if self.resolved_model_path else "LightGBM"
+        model_id = (
+            self.resolved_model_path.name
+            if self.resolved_model_path
+            else "Calibrated-LightGBM"
+        )
 
         return MetaLabelResult(
             is_approved=is_approved,
             prob_win=prob_win,
             threshold=self.threshold,
             features=feat_dict,
-            model_name=model_name,
+            model_name=model_id,
         )
 
     def evaluate_series(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
