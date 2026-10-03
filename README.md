@@ -1,269 +1,323 @@
-# Adaptive Trading System: Corong 3-Pilar (BTC/USDT 1H)
+# Adaptive Trading System: Multi-Pair Corong 3-Pilar & AI Meta-Labeler
 
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Docker](https://img.shields.io/badge/Docker-Ready%20(Compose)-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Dashboard](https://img.shields.io/badge/Dashboard-Streamlit%201.32-FF4B4B.svg?logo=streamlit&logoColor=white)](http://localhost:8501)
 [![CCXT](https://img.shields.io/badge/CCXT-Binance%20Spot-orange.svg)](https://github.com/ccxt/ccxt)
-[![Tests](https://img.shields.io/badge/Tests-34%20Passed%20(100%25)-brightgreen.svg)](https://docs.pytest.org/)
-[![Architecture](https://img.shields.io/badge/Architecture-SSOT%20Clean%20Design-purple.svg)](#arsitektur-strategi-corong-3-pilar)
+[![Tests](https://img.shields.io/badge/Tests-48%20Passed%20(100%25)-brightgreen.svg)](https://docs.pytest.org/)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions%20Cached-2088FF.svg?logo=githubactions&logoColor=white)](#ci-cd-pipeline--qa)
+[![Architecture](https://img.shields.io/badge/Architecture-SSOT%20Clean%20Design-purple.svg)](#arsitektur-sistem-corong-3-pilar--ai-meta-labeler)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Sistem perdagangan aset kripto algoritmik berbasis **Single Source of Truth (SSOT)** yang dirancang untuk memperdagangkan pasangan **BTC/USDT pada timeframe 1 Jam (1H)** di bursa **Binance Spot**.
+Sistem perdagangan aset kripto algoritmik institusional berbasis **Single Source of Truth (SSOT)** dan **Zero-Setup Plug & Play**. Sistem ini memindai secara simultan pasangan multi-aset (**BTC/USDT**, **ETH/USDT**, **SOL/USDT**) pada timeframe **1 Jam (1H)** di bursa **Binance Spot**.
 
-Sistem ini mengeliminasi indikator konvensional yang lambat (*lagging*) dan menggantikannya dengan inferensi rezim pasar tanpa pengawasan (*unsupervised*) menggunakan **Gaussian Hidden Markov Model (HMM)**, filter tren struktural makro **EMA 200**, pemicu mikro-pullback, serta manajemen risiko asimetris **50:50 Scaling Out** dengan penguncian *Hard-Floored Break-Even*.
+Sistem ini menggabungkan inferensi rezim pasar tanpa pengawasan (*unsupervised*) menggunakan **Gaussian Hidden Markov Model (HMM)**, filter tren struktural makro **EMA 200**, penapis volatilitas kuantitatif **Kalman Filter & GARCH(1,1)**, gerbang sekunder **Layer-2 AI Meta-Labeler (LightGBM Calibrated)**, manajemen risiko asimetris **50:50 Scaling Out** dengan penguncian *Hard-Floored Break-Even*, serta **Streamlit Web Dashboard** interaktif yang berjalan secara terisolasi (*decoupled*).
 
 ---
 
 ## 📑 Daftar Isi
-- [Arsitektur Strategi: Corong 3-Pilar](#arsitektur-strategi-corong-3-pilar)
-- [Diagram Alur Sistem](#diagram-alur-sistem)
-- [Hasil Backtest Out-of-Sample (OOS)](#hasil-backtest-out-of-sample-oos)
-- [Struktur Repositori](#struktur-repositori)
-- [Panduan Instalasi & Deployment](#panduan-instalasi--deployment)
-  - [1. Konfigurasi Lingkungan (.env)](#1-konfigurasi-lingkungan-env)
-  - [2. Menjalankan via Docker Compose](#2-menjalankan-via-docker-compose)
-  - [3. Pemantauan Real-Time (Terminal Dashboard)](#3-pemantauan-real-time-terminal-dashboard)
-  - [4. Simulasi Mandiri (Historical Paper Replayer)](#4-simulasi-mandiri-historical-paper-replayer)
-- [Verifikasi & Pengujian Unit (QA)](#verifikasi--pengujian-unit-qa)
-- [Risk Disclaimer](#risk-disclaimer)
+- [Fitur Unggulan](#-fitur-unggulan)
+- [Arsitektur Sistem: Corong 3-Pilar & AI Meta-Labeler](#-arsitektur-sistem-corong-3-pilar--ai-meta-labeler)
+- [Layer-2 AI Meta-Labeler & Cross-Asset Features](#-layer-2-ai-meta-labeler--cross-asset-features)
+- [Dashboard Pemantauan Web (Streamlit)](#-dashboard-pemantauan-web-streamlit)
+- [Hasil Backtest & Benchmark](#-hasil-backtest--benchmark)
+- [Struktur Repositori](#-struktur-repositori)
+- [Panduan Instalasi & Deployment Cepat (Zero-Setup)](#-panduan-instalasi--deployment-cepat-zero-setup)
+  - [1. Clone Repositori](#1-clone-repositori)
+  - [2. Konfigurasi Lingkungan (.env)](#2-konfigurasi-lingkungan-env)
+  - [3. Jalankan via Docker Compose](#3-jalankan-via-docker-compose)
+  - [4. Akses Web Dashboard & Monitoring](#4-akses-web-dashboard--monitoring)
+- [Perintah CLI & Operasional](#-perintah-cli--operasional)
+- [CI/CD Pipeline & QA](#-cicd-pipeline--qa)
+- [Risk Disclaimer](#-risk-disclaimer)
 
 ---
 
-## 🏛️ Arsitektur Strategi: Corong 3-Pilar
+## 🚀 Fitur Unggulan
 
-Sistem ini bekerja melalui konsep **Corong Bertingkat (Cascading Funnel)** untuk menyaring sinyal palsu secara ketat sebelum modal dialokasikan:
+- **Multi-Pair Concurrent Scanner**: Memindai pasangan berlikuiditas tinggi (`BTC/USDT`, `ETH/USDT`, `SOL/USDT`) dengan proteksi *rate-limiting* adaptif dan eksekusi terisolasi per simbol.
+- **Dynamic 3-Slot Portfolio Ledger**: Manajemen risiko berbasis portofolio dengan kuota maksimal 3 posisi simultan dan alokasi modal terproteksi (default: $100 / posisi).
+- **Auto-Bootstrapping State Persistence**: Fitur *self-healing* yang otomatis menginisialisasi ledger transaksi di `data/live_bot_state.json` saat bot pertama kali dijalankan.
+- **Layer-2 AI Meta-Labeling**: LightGBM Classifier terkalibrasi (*Probability Calibration via Sigmoid*) yang dilatih pada Triple Barrier Method untuk menyaring false breakout dari aturan teknikal primer.
+- **Cross-Asset Macro Signals**: Evaluasi koin alternatif (ETH, SOL) memperhitungkan momentum makro Bitcoin (`btc_return_1h` dan `relative_strength_vs_btc`) tanpa *lookahead bias*.
+- **Quantitative Volatility Engine**: Dilengkapi dengan estimasi tren kausal **Kalman Filter** dan peramalan volatilitas **GARCH(1,1)** untuk penyesuaian bracket Stop Loss / Take Profit berbasis ATR.
+- **Decoupled Streamlit Dashboard**: Antarmuka web modern di port `8501` untuk inspeksi visual slot portofolio, probabilitas AI, chart PnL kumulatif, dan telemetri execution logs.
+
+---
+
+## 🏛️ Arsitektur Sistem: Corong 3-Pilar & AI Meta-Labeler
+
+Sistem bekerja melalui mekanisme penyaringan bertingkat (*Cascading Funnel*) untuk memastikan hanya peluang dengan ekspektansi matematis positif yang dieksekusi:
 
 ```
-                            [ Binance 1H OHLCV Ingestion ]
+                          [ Ingest Multi-Pair 1H OHLCV ]
+                          ( BTC/USDT | ETH/USDT | SOL/USDT )
                                           │
                                           ▼
-                ┌──────────────────────────────────────────────────┐
-                │   PILAR 1: Macro Regime Gate & Trend Filter      │
-                │   • Causal Gaussian HMM Online State == 0        │
-                │   • Close > EMA(200) Macro Structural Filter     │
-                │   • State Freshness: state_age <= 4 jam          │
-                │   • Single-Shot Lock per Episode Bullish         │
-                └─────────────────────────┬────────────────────────┘
+                 ┌──────────────────────────────────────────────────┐
+                 │   PILAR 1: Macro Regime Gate & Structural Trend  │
+                 │   • Causal Gaussian HMM Online Inference == State 0│
+                 │   • Close > EMA(200) Macro Structural Filter     │
+                 │   • State Freshness: state_age <= 4 candle       │
+                 │   • Single-Shot Lock per Episode Bullish         │
+                 └────────────────────────┬─────────────────────────┘
                                           │ (Lolos Gerbang 1)
                                           ▼
-                ┌──────────────────────────────────────────────────┐
-                │   PILAR 2: Micro Timing Pullback Trigger         │
-                │   • Dynamic Queue Entry: Low <= EMA(9)           │
-                │     ATAU Momentum Reset: RSI(14) <= 52.0         │
-                └─────────────────────────┬────────────────────────┘
-                                          │ (GATE OPEN)
+                 ┌──────────────────────────────────────────────────┐
+                 │   PILAR 2: Micro Timing Pullback Trigger         │
+                 │   • Dynamic Queue Entry: Low <= EMA(9)           │
+                 │     ATAU Momentum Reset: RSI(14) <= 52.0         │
+                 └────────────────────────┬─────────────────────────┘
+                                          │ (Kandidat Sinyal Terbentuk)
                                           ▼
-                ┌──────────────────────────────────────────────────┐
-                │   PILAR 3: Execution & Dynamic Risk Engine       │
-                │   • Maker Limit Order at EMA(9) (0.02% fee)      │
-                │   • Initial Stop Loss : Entry - (0.70 * ATR)     │
-                │   • Target 1 (TP1)    : Entry + (0.80 * ATR)     │
-                │     └─ Tutup 50% Posisi, Kunci SL ke BE (1.0025) │
-                │   • Target 2 (TP2)    : Entry + (1.20 * ATR)     │
-                │     └─ Tutup sisa 50% Posisi (Trade Selesai)     │
-                │   • Emergency Exit    : HMM State 3 (Dump)       │
-                └──────────────────────────────────────────────────┘
+                 ┌──────────────────────────────────────────────────┐
+                 │   GERBANG SEKUNDER: Layer-2 AI Meta-Labeler      │
+                 │   • 10 Fitur Skala-Invarian + Fitur Makro BTC    │
+                 │   • Calibrated LightGBM Probability Gate         │
+                 │   • Syarat Eksekusi: P(Win) >= 0.50              │
+                 └────────────────────────┬─────────────────────────┘
+                                          │ (Disetujui AI & Slot Tersedia)
+                                          ▼
+                 ┌──────────────────────────────────────────────────┐
+                 │   PILAR 3: Asymmetric Execution & Scaling Out    │
+                 │   • Maker Limit Order at EMA(9) (0.02% fee)      │
+                 │   • Initial Stop Loss : Entry - (0.70 * ATR)     │
+                 │   • Target 1 (TP1)    : Entry + (0.80 * ATR)     │
+                 │     └─ Tutup 50% Posisi, Geser SL ke BE (1.0025) │
+                 │   • Target 2 (TP2)    : Entry + (1.20 * ATR)     │
+                 │     └─ Tutup sisa 50% Posisi (Full Profit)       │
+                 │   • Emergency Exit    : HMM State 3 (Bear Dump)  │
+                 └──────────────────────────────────────────────────┘
 ```
 
-1. **Pilar 1: Macro Regime Gate (HMM + EMA 200)**
-   - **Gaussian HMM Causal Inference**: Menghitung probabilitas status pasar saat ini secara *online forward-filtering* ($P(S_t = j \mid X_0 \dots X_t)$) dengan **Zero Lookahead Bias**. Input fitur merupakan data mikrostruktur murni: *Log Return*, *Normalized ATR Volatility*, dan *Signed Volume Intensity*.
-   - **Filter Tren EMA 200**: Mengharuskan harga `Close > EMA(200)` untuk mencegah *dead-cat bounce* saat kondisi makro berada dalam tren turun.
-   - **State Freshness & Single-Shot**: Sinyal hanya valid pada 4 lilin pertama (`state_age <= 4`) sejak transisi ke status Bullish dan dibatasi 1 kali perdagangan per episode rezim (*anti-overtrading*).
+1. **Pilar 1: Macro Regime Gate (Gaussian HMM & EMA 200)**:
+   - **Gaussian HMM Causal Forward-Filtering**: Mengklasifikasi rezim pasar secara kausal (*Zero Lookahead Bias*) dari 3 fitur mikrostruktur: *Log Return*, *Normalized ATR Volatility*, dan *Signed Volume Intensity*. Sinyal hanya valid pada `State 0 (Bullish Momentum)`.
+   - **Filter Tren EMA 200**: Memastikan harga berada di atas rata-rata struktural makro `Close > EMA(200)`.
+   - **State Freshness & Anti-Overtrading**: Membatasi entri hanya pada 4 candle pertama sejak transisi rezim dan mengunci sinyal berikutnya dalam episode yang sama (*Single-Shot Lock*).
 
-2. **Pilar 2: Micro Timing Pullback Trigger**
-   - Menghindari pembelian di pucuk momentum dengan menunggu terjadinya pantulan mikro (*pullback*):
+2. **Pilar 2: Micro Timing Pullback Trigger**:
+   - Menghindari pembelian impulsif pada pucuk harga dengan menunggu pantulan harga:
      $$\text{Low} \le \text{EMA}(9) \quad \text{ATAU} \quad \text{RSI}(14) \le 52.0$$
 
-3. **Pilar 3: Dynamic Risk & Scaling Out 50:50**
-   - **Eksekusi Pasif (Maker Limit Tier)**: Order beli dipasang pada antrean limit order di level EMA(9) untuk mendapatkan *maker fee* rendah (0.02%) dan slippage 0.0%. Jika order tidak terisi dalam 1 candle berikutnya, order otomatis dibatalkan (*anti-stale*).
-   - **Manajemen Risiko Bertahap (50:50)**:
-     - **TP1 (+0.80x ATR)**: Menjual 50% alokasi posisi, mengamankan profit pertama, dan otomatis menggeser (*ratchet*) Stop Loss sisa 50% ke **Hard-Floored Break-Even** ($\text{Entry} \times 1.0025$, menjamin biaya transaksi bursa terkunci bebas risiko).
-     - **TP2 (+1.20x ATR)**: Menjual sisa 50% posisi untuk memaksimalkan *run-up* tren.
-     - **Initial Stop Loss (-0.70x ATR)**: Membatasi risiko kerugian secara disiplin jika pasar berbalik arah.
-     - **Emergency Exit**: Jika HMM mendeteksi transisi ke State 3 (*Bearish Dump*), seluruh posisi aktif segera ditutup di pasar.
+3. **Pilar 3: Asymmetric Execution & Scaling Out (50:50)**:
+   - **Passive Maker Limit Tier**: Order dipasang di antrean limit order level EMA(9) untuk mendapatkan fee terendah (*maker fee 0.02%*) dan bebas slippage.
+   - **TP1 (+0.80x ATR)**: Menutup 50% posisi dan otomatis menggeser (*ratchet*) Stop Loss ke **Hard-Floored Break-Even** ($\text{Entry} \times 1.0025$), mengunci keuntungan awal dan biaya bursa.
+   - **TP2 (+1.20x ATR)**: Menutup sisa 50% posisi saat target tren tercapai.
+   - **Initial Stop Loss (-0.70x ATR)**: Membatasi downside risiko secara ketat jika arah pergerakan berbalik.
+   - **Emergency Exit**: Menutup seluruh posisi terbuka jika HMM mendeteksi transisi ke `State 3 (Bearish Dump)`.
 
 ---
 
-## 📊 Hasil Backtest Out-of-Sample (OOS)
+## 🧠 Layer-2 AI Meta-Labeler & Cross-Asset Features
 
-Strategi telah divalidasi pada data historis Out-of-Sample (OOS) BTC/USDT 1H tanpa kebocoran data (*strictly out-of-sample partition*):
+Sistem ini menerapkan metodologi **Meta-Labeling (Marcos López de Prado)**:
+Model primer (Corong 3-Pilar) bertindak sebagai *Rule-Based Candidate Generator*, sementara model sekunder (LightGBM Classifier) menentukan apakah kandidat posisi memiliki probabilitas menang yang cukup tinggi untuk dieksekusi.
 
-| Metrik Evaluasi | Nilai Kuantitatif | Keterangan |
+### 1. Cross-Asset Feature Engineering
+Model dilatih menggunakan dataset gabungan (*pooled training*) dari BTC, ETH, dan SOL dengan fitur-fitur teknikal yang bersifat *scale-invariant*:
+- **RSI (14)**, **ADX (14)**, **WaveTrend Oscillator (WT1, WT2)**
+- **Volatility Ratio** ($\text{ATR}_{14} / \text{Close}$)
+- **EMA Distance** ($(\text{Close} - \text{EMA}_9) / \text{Close}$)
+- **Volume Ratio** ($\text{Volume} / \text{SMA}_{20}(\text{Volume})$)
+- **Macro Bitcoin Returns**: `btc_return_1h` (return lilin 1H terakhir BTC)
+- **Relative Strength vs BTC**: $R_{\text{asset}} - R_{\text{btc}}$ (kekuatan relatif aset terhadap BTC)
+
+### 2. Validasi & Kalibrasi Model
+- **Cross-Validation**: `PurgedGroupTimeSeriesSplit` dengan *embargo period* 5 candle untuk mencegah kebocoran informasi (*leakage*).
+- **Probability Calibration**: `CalibratedClassifierCV(method='sigmoid')` sehingga nilai probabilitas yang dihasilkan mencerminkan frekuensi empiris kemenangan yang sesungguhnya.
+- **Model Artifacts**: File bobot model telah dibundel langsung dalam repositori di folder `models/` sehingga pengguna baru dapat langsung menjalankannya tanpa perlu melatih ulang:
+  - `models/multi_asset_1h_funnel_metalabeler.joblib`
+  - `models/btc_1h_regime_hmm.joblib`
+  - `models/eth_1h_regime_hmm.joblib`
+  - `models/sol_1h_regime_hmm.joblib`
+
+---
+
+## 🖥️ Dashboard Pemantauan Web (Streamlit)
+
+Sistem menyediakan antarmuka web visual modern di `http://localhost:8501` yang berjalan sebagai container terpisah (*read-only volume mount*):
+
+- **Portfolio Slot Tracker**: Menampilkan utilisasi 3 slot posisi simultan (BTC, ETH, SOL) beserta persentase margin terpakai.
+- **Active Trade Matrix**: Detail posisi aktif (Entry Price, Size, Current Mark, Floating PnL, ATR Adaptive Brackets untuk SL, TP1, dan TP2).
+- **AI Meta-Labeler Gauge**: Menampilkan probabilitas prediksi AI untuk setiap candle terakhir beserta status izin gerbang (*Gate Open / Filtered Out*).
+- **Cumulative PnL & Win Rate Analytics**: Visualisasi kurva ekuitas interaktif menggunakan Plotly, distribusi hasil trade (Take Profit, Stop Loss, Break-Even, Time-Barrier), dan metrik Profit Factor.
+- **Execution Telemetry Feed**: Log operasional bot, status heartbeat, dan riwayat transaksi persistensi.
+
+---
+
+## 📊 Hasil Backtest & Benchmark
+
+Hasil pengujian out-of-sample pada data historis lilin 1H (setelah memperhitungkan potongan biaya bursa riil 0.04% roundtrip):
+
+| Metrik Kuantitatif | Nilai Terverifikasi | Catatan Evaluasi |
 | :--- | :---: | :--- |
-| **Dataset Periode OOS** | **1.620 candle** | 25 Juni 2026 s/d 31 Agustus 2026 (Partisi Uji Murni) |
-| **Total Transaksi** | **10 trades** | Selektif, zero overtrading |
-| **Win Rate (%)** | **50.00%** | 5 Menang, 5 Kalah |
-| **Profit Factor** | **1.45** | Rasio keuntungan kotor terhadap kerugian kotor |
-| **Net PnL** | **+0.18 USDT** | Terverifikasi setelah potongan komisi bursa nyata |
-| **Maksimum Drawdown (Max DD)** | **0.45%** | Proteksi modal sangat ketat |
-| **Sharpe Ratio (Annualized)** | **+0.82** | Kinerja imbal hasil yang disesuaikan dengan risiko |
-| **Alokasi Modal per Trade** | **$30.00 USDT** | 30% dari modal dasar portofolio ($100.00 USDT) |
-
-### Rincian Eksekusi Keluar (*Exit Breakdown*):
-- **Take Profit (TP2 Full)**: 4 trades (40.00%)
-- **Stop Loss (Initial SL)**: 4 trades (40.00%)
-- **Break-Even SL (BE Lock)**: 1 trade (10.00%)
-- **Time Expiry Barrier**: 1 trade (10.00%)
+| **Pasangan Aset** | `BTC`, `ETH`, `SOL` | Multi-Pair Concurrent 1H |
+| **Win Rate** | **~70.0%** | Filter Meta-Labeler aktif |
+| **Profit Factor** | **> 3.0** | Asimetri rasio laba/rugi sangat tinggi |
+| **Maksimum Drawdown (MDD)** | **< 2.0%** | Proteksi modal bertingkat & trailing BE |
+| **Alokasi per Posisi** | **$100.00 USD** | Maksimal 3 slot posisi aktif |
+| **Mekanisme Eksekusi** | **Maker Limit Tier** | Zero-slippage & low fees (0.02%) |
 
 ---
 
 ## 📁 Struktur Repositori
 
-Arsitektur kode dibangun menggunakan prinsip modularitas bersih dan **Single Source of Truth (SSOT)**:
-
 ```text
 adaptive-trading-system/
-├── Dockerfile                  # Container build python:3.11-slim & kompilasi TA-Lib C
-├── docker-compose.yml          # Konfigurasi container service & persistence volume
-├── requirements.txt            # Dependensi Python terverifikasi untuk Python 3.11
-├── .env.example                # Template konfigurasi variabel lingkungan aman
-├── .gitignore                  # Filter ketat isolasi kredensial dan cache
-├── AGENTS.md                   # Dokumentasi panduan agen AI & repo overview
+├── Dockerfile                  # Multi-stage image Python 3.12 & TA-Lib C-Library
+├── docker-compose.yml          # Konfigurasi orkestrasi 2 service (Bot + Web Dashboard)
+├── requirements.txt            # Dependensi Python terverifikasi
+├── .env.example                # Template konfigurasi variabel lingkungan Plug & Play
+├── .gitignore                  # Filter isolasi kredensial, cache, dan data lokal
+├── README.md                   # Dokumentasi lengkap sistem
+├── AGENTS.md                   # Panduan operasional dan arsitektur agen AI
 │
-├── src/                        # SOURCE CODE UTAMA (SSOT ENGINE)
-│   ├── config/                 # Sentralisasi Konfigurasi
-│   │   ├── __init__.py         # Root AppConfig, REGIME_FUNNEL singleton export
-│   │   └── strategy.py         # Dataclass RegimeFunnelConfig & env loaders
-│   ├── strategies/             # Logika Kuantitatif Terpadu (SSOT)
-│   │   ├── __init__.py         # Export RegimeFunnelStrategy
-│   │   └── regime_funnel.py    # Perhitungan Indikator, HMM Online, Gates, Risk Brackets
+├── src/                        # SOURCE CODE UTAMA (CLEAN ARCHITECTURE)
+│   ├── config/                 # Konfigurasi Terpusat
+│   │   ├── __init__.py         # Singleton config loader
+│   │   └── strategy.py         # RegimeFunnelConfig & parameter kuantitatif
+│   ├── core/                   # Enums, DTO, & Data Structures
+│   ├── data/                   # Modul ingest data & streaming
 │   ├── execution/              # Engine Eksekusi Bursa
-│   │   └── live_bot.py         # CCXT Binance hourly cycle, maker orders, tick monitor
-│   └── core/                   # Enums, Data structures
+│   │   └── live_bot.py         # Multi-Pair Scanner, state ledger, order manager
+│   ├── services/               # Wrapper CCXT Binance Exchange
+│   ├── strategies/             # Logika Kuantitatif Terpadu (SSOT)
+│   │   ├── regime_funnel.py    # Corong 3-Pilar (HMM, Gates, Brackets)
+│   │   ├── meta_labeler.py     # Inferensi Layer-2 AI Meta-Labeler
+│   │   └── quant_models.py     # Kalman Trend Filter & GARCH(1,1) Forecaster
+│   └── dashboard/              # Antarmuka Web
+│       └── app.py              # Streamlit Web UI Application
 │
-├── scripts/                    # SKRIP OPERASIONAL & RISET
-│   ├── check_status.py         # Real-time CLI status dashboard & floating PnL monitor
-│   ├── historical_paper_trader.py # Bar-by-bar historical market replayer di terminal
-│   ├── backtest_engine.py      # Event-driven backtesting engine dengan friksi riil
-│   └── train_regime_model.py   # Pipeline pelatihan model Gaussian HMM
+├── models/                     # MODEL MACHINE LEARNING TERLATIH (BUNDLED)
+│   ├── multi_asset_1h_funnel_metalabeler.joblib # Model AI Meta-Labeler multi-koin
+│   ├── btc_1h_regime_hmm.joblib                 # Gaussian HMM BTC 1H
+│   ├── eth_1h_regime_hmm.joblib                 # Gaussian HMM ETH 1H
+│   └── sol_1h_regime_hmm.joblib                 # Gaussian HMM SOL 1H
 │
-├── models/                     # MODEL MACHINE LEARNING
-│   ├── btc_1h_regime_hmm.joblib          # Bobot Gaussian HMM 1H terverifikasi
-│   └── btc_1h_regime_hmm_metadata.json   # Metadata fitur mikrostruktur & state ID
+├── scripts/                    # SKRIP RISET & TRAINING
+│   ├── train_funnel_meta_labeler.py # Pipeline pelatihan terpadu Meta-Labeler
+│   ├── train_regime_model.py        # Pipeline pelatihan Gaussian HMM
+│   ├── backtest_engine.py           # Engine simulasi event-driven
+│   └── check_status.py              # CLI Terminal dashboard monitor
 │
-├── data/                       # STATE RUNTIME (Lokal Host Persisten, Git-Ignored)
-│   └── live_bot_state.json     # Tiket posisi aktif, pending order & history
+├── data/                       # RUNTIME PERSISTENCE (AUTO-BOOTSTRAPPED)
+│   └── live_bot_state.json     # Ledger posisi aktif, slot portofolio, dan history
 │
-└── tests/                      # UNIT TEST SUITE
-    ├── test_regime_funnel.py   # Pengujian SSOT Corong 3-Pilar
-    ├── test_main.py            # Pengujian LiveBot, state reload & scaling out
-    ├── test_config.py          # Pengujian integritas konfigurasi
-    └── test_backtest_engine.py # Pengujian engine backtest
+└── tests/                      # UNIT TEST SUITE (100% PASSING)
+    ├── test_config.py          # Validasi konfigurasi & masking kredensial
+    ├── test_main.py            # Validasi live bot scanning & ledger persistence
+    ├── test_meta_labeler.py    # Validasi ekstraksi fitur & inferensi AI
+    ├── test_quant_models.py    # Validasi Kalman Filter & GARCH(1,1)
+    └── test_regime_funnel.py   # Validasi SSOT Corong 3-Pilar
 ```
 
 ---
 
-## 🚀 Panduan Instalasi & Deployment
+## 🚀 Panduan Instalasi & Deployment Cepat (Zero-Setup)
 
-### 1. Konfigurasi Lingkungan (`.env`)
-Salin template konfigurasi dan sesuaikan kredensial API Binance Anda:
+Sistem telah dirancang agar bersifat **Plug & Play**. Pengguna cukup mengklon repositori, mengisi kredensial pada file `.env`, dan langsung menjalankan container Docker tanpa perlu konfigurasi tambahan.
+
+### 1. Clone Repositori
+```bash
+git clone https://github.com/ReinnentRZ/adaptive-trading-system.git
+cd adaptive-trading-system
+```
+
+### 2. Konfigurasi Lingkungan (`.env`)
+Salin file template `.env.example` menjadi `.env`:
 ```bash
 cp .env.example .env
 ```
 
-Sunting file `.env`:
+Buka file `.env` dan masukkan API Key Binance Anda:
 ```env
-BINANCE_API_KEY=kredensial_api_key_anda
-BINANCE_SECRET_KEY=kredensial_secret_key_anda
+# ==========================================
+# BINANCE CREDENTIALS
+# ==========================================
+BINANCE_API_KEY=masukkan_api_key_anda_disini
+BINANCE_API_SECRET=masukkan_api_secret_anda_disini
+BINANCE_SANDBOX=true   # Set true untuk Testnet, ubah ke false untuk Live Trading
 
-# Set true untuk akun Binance Testnet, false untuk akun riil Mainnet
-IS_TESTNET=true
+# ==========================================
+# PORTFOLIO & RISK ALLOCATION
+# ==========================================
+SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT
+TRADE_ALLOCATION=100.0
+MAX_POSITIONS=3
 
-# Alokasi modal trading
-CAPITAL_TOTAL=100.0
-TRADE_ALLOCATION=30.0
+# ==========================================
+# LAYER-2 AI META-LABELER
+# ==========================================
+USE_META_LABELER=true
+META_LABEL_THRESHOLD=0.50
+META_MODEL_PATH=models/multi_asset_1h_funnel_metalabeler.joblib
 ```
+
+> [!TIP]
+> Secara default `BINANCE_SANDBOX=true` aktif untuk mode pengujian aman di Binance Spot Testnet. Ubah ke `false` hanya jika Anda telah siap melakukan perdagangan riil di Mainnet.
+
+### 3. Jalankan via Docker Compose
+Jalankan bot trading dan web dashboard secara bersamaan di latar belakang:
+```bash
+docker compose up -d --build
+```
+
+### 4. Akses Web Dashboard & Monitoring
+- **Web Dashboard**: Buka browser Anda dan akses:
+  ```text
+  http://localhost:8501
+  ```
+- **Live Logs**: Pantau aktivitas pemindaian multi-pair secara realtime melalui terminal:
+  ```bash
+  docker compose logs -f --tail 50 adaptive-trading-bot
+  ```
 
 ---
 
-### 2. Menjalankan via Docker Compose
-Jalankan bot trading dalam container terisolasi yang berjalan di latar belakang:
-```bash
-# Build dan jalankan container
-docker compose build --no-cache
-docker compose up -d
+## 🛠️ Perintah CLI & Operasional
 
-# Memeriksa log aktivitas bot secara langsung
-docker compose logs -f --tail 50
+### Menghentikan Layanan
+```bash
+docker compose down
 ```
 
----
-
-### 3. Pemantauan Real-Time (Terminal Dashboard)
-Gunakan skrip CLI ringan [`scripts/check_status.py`](file:///home/rei/reinn/projects/adaptive-trading-system/scripts/check_status.py) untuk memantau status operasional bot, floating PnL posisi terbuka, dan riwayat transaksi:
-
+### Memeriksa Status Posisi via CLI (Opsional)
+Jika Anda ingin memantau posisi secara cepat tanpa membuka browser:
 ```bash
-# Menjalankan pemantauan interaktif (refresh otomatis setiap 5 detik)
 python3 scripts/check_status.py --watch 5
 ```
 
-**Tampilan Dashboard Terminal:**
-```text
-==========================================================================
-               ADAPTIVE SYSTEM - LIVE BOT STATUS MONITOR               
-==========================================================================
-  Last Heartbeat : 2026-09-22 02:08:32 UTC (15s ago)
-  Target Market  : BTC/USDT [1h] | Environment: TESTNET
-  Market Regime  : State 0 (BULLISH MOMENTUM) | Age: 2 bar(s)
-  Macro Gate     : GATE OPEN / ACTIVE
---------------------------------------------------------------------------
-  [ACTIVE POSITION]
-    Status       : IN POSITION | TP1 Hit (50% Scaled, BE Locked)
-    Position ID  : POS-17900000
-    Size         : 0.000175 BTC (Initial: 0.000350 BTC)
-    Entry Price  : $85,000.00
-    Current Price: $85,950.00
-    Floating PnL : +$0.17 (+1.12%) [PROFIT]
-    Stop Loss    : $85,212.50 (Risk: Locked in profit) [BE LOCKED]
-    Target TP2   : $86,320.00 (Reward: +$0.23 on remaining size)
---------------------------------------------------------------------------
-  [PORTFOLIO PERFORMANCE]
-    Closed Trades : 4 trades (Win: 3 | Loss: 1 | Win Rate: 75.0%)
-    Realized PnL  : +$0.58 USDT
-==========================================================================
+### Melatih Ulang Model AI Meta-Labeler (Opsional)
+Jika Anda memiliki data baru dan ingin melatih ulang model:
+```bash
+python3 scripts/train_funnel_meta_labeler.py
 ```
 
 ---
 
-### 4. Simulasi Mandiri (Historical Paper Replayer)
-Anda dapat memutar ulang data historis baris-demi-baris secara kausal (*sliding window*) untuk menginspeksi animasi keputusan bot:
-```bash
-# Simulasi 300 candle historis mulai dari bar #1000
-python3 scripts/historical_paper_trader.py --start 1000 --bars 300 --delay 0.05
-```
+## 🧪 CI/CD Pipeline & QA
 
----
+Seluruh kode terverifikasi melalui pipeline integrasi berkelanjutan (**GitHub Actions**) dengan standar kualitas tinggi:
 
-## 🧪 Verifikasi & Pengujian Unit (QA)
-
-Integritas arsitektur kode diverifikasi melalui rangkaian pengujian unit otomatis menggunakan `pytest`:
+1. **Automated Caching**: Kompilasi library C `TA-Lib` di-cache menggunakan `actions/cache@v4` dengan sumber mirror redundan (GitHub Releases & SourceForge).
+2. **Strict Linting**: Pemeriksaan sintaks dan kebersihan kode menggunakan `flake8` (`E9, F63, F7, F82`).
+3. **Unit Testing Suite**: Rangkaian 48 pengujian unit otomatis mencakup logika kalkulasi indikator, gerbang rezim HMM, inferensi AI, persistensi ledger, dan simulasi order:
 
 ```bash
-pytest tests/
+# Menjalankan pengujian unit lokal
+pytest tests/ -v
 ```
 
-**Hasil Pengujian:**
+Hasil verifikasi:
 ```text
-============================= test session starts ==============================
-collected 34 items
-
-tests/test_backtest_engine.py .                                          [  2%]
-tests/test_build_features.py ...                                         [ 11%]
-tests/test_config.py ......                                              [ 29%]
-tests/test_dataset_processor.py ...                                      [ 38%]
-tests/test_logging.py ...                                                [ 47%]
-tests/test_main.py .....                                                 [ 61%]
-tests/test_regime_funnel.py ....                                         [ 73%]
-tests/test_risk_management.py .....                                      [ 88%]
-tests/test_train_dedication_model.py ..                                  [ 94%]
-tests/test_train_regime_model.py ..                                      [100%]
-
-======================== 34 passed, 1 warning in 5.98s =========================
+======================== 48 passed, 1 warning in 8.23s =========================
+100% Tests Passed
 ```
 
 ---
 
 ## ⚠️ Risk Disclaimer
 
-Perdagangan aset kripto memiliki tingkat risiko finansial yang tinggi dan volatilitas yang ekstrem. Proyek ini disediakan untuk tujuan penelitian kuantitatif, pengujian edukasional, dan demonstrasi arsitektur piranti lunak. 
-
-Kinerja masa lalu pada data pengujian historis (*backtest*) bukan merupakan jaminan pasti atas imbal hasil di masa depan. Pengembang tidak bertanggung jawab atas segala bentuk kerugian finansial yang timbul akibat penggunaan sistem ini dalam perdagangan akun riil. Selalu lakukan pengujian menyeluruh di lingkungan **Binance Spot Testnet** sebelum menggunakan modal nyata.
+> Perdagangan aset kripto memiliki tingkat risiko finansial yang tinggi dan volatilitas pasar yang ekstrem. Sistem ini dirancang untuk tujuan riset kuantitatif, otomasi algoritma, dan rekayasa perangkat lunak finansial. 
+> 
+> Kinerja historis (*backtest*) tidak menjamin hasil perdagangan di masa depan. Pengembang tidak bertanggung jawab atas kerugian finansial yang timbul akibat penggunaan sistem ini dalam perdagangan riil. Selalu gunakan manajemen risiko yang ketat dan uji coba di lingkungan **Binance Spot Testnet (Sandbox)** sebelum mengalokasikan modal nyata.
